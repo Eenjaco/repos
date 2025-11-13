@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-mdclean_universal - Universal document processor for knowledge management
+aster - Navigate your constellation of knowledge
 
-Converts ANY input to clean, structured markdown:
-- Images (OCR with Tesseract)
-- Audio (transcription with Vosk/Whisper)
-- Documents (PDF, EPUB, DOCX, HTML)
+"Lost in a night-sky of notes? Aster lights the way."
+
+Transforms any document into structured, connected knowledge:
+- Images (OCR with Tesseract/PaddleOCR)
+- Audio (transcription with Vosk)
+- Documents (PDF, EPUB, DOCX, PPTX, HTML)
+- Data (CSV, Excel with AI analysis)
 - Text (TXT, MD)
 
-Pipeline: Extract → Structure (Unstructured) → Clean (Ollama 3.2 1B) → Format (KM)
+Pipeline: Extract → Structure → Clean (Ollama) → Connect → Navigate
 
 Usage:
-    mdclean_universal document.pdf
-    mdclean_universal image.jpg --output ~/Vault/Inbox/
-    mdclean_universal --batch ~/Documents/to-process/
+    aster document.pdf
+    aster image.jpg --output ~/Vault/Inbox/
+    aster --batch ~/Documents/to-process/
+    aster --web  # Start web interface for iPhone access
 """
 
 import argparse

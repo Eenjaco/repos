@@ -1,280 +1,462 @@
-# mdclean_universal
+# ✨ Aster
 
-**Universal Document Processor for Knowledge Management**
+**Navigate your constellation of knowledge**
 
-Convert ANY document type to clean, structured markdown ready for Obsidian/Zettelkasten.
+> "Lost in a night-sky of notes? Aster lights the way."
 
----
-
-## What It Does
-
-One tool to process **all** your documents:
-
-```
-📸 Photos → 🎙️ Audio → 📄 PDFs → 💰 CSV → 📝 Text → 💎 Clean Markdown
-```
-
-**Supported formats:**
-- **Images**: JPG, PNG (OCR with Tesseract)
-- **Audio**: MP3, M4A, WAV (transcription)
-- **Documents**: PDF, EPUB, DOCX, HTML
-- **Financial**: CSV (budgets, transactions, portfolios)
-- **Text**: TXT, MD (cleanup)
-
-**Pipeline:**
-1. **Extract** - OCR images, transcribe audio, parse documents
-2. **Structure** - Detect headings, paragraphs, lists (Unstructured.io)
-3. **Clean** - Add punctuation, fix errors (Ollama 3.2 1B)
-4. **Format** - Generate frontmatter, metadata for knowledge management
+Transform scattered documents into a connected constellation - organize, link, and distill any source into structured knowledge that guides you.
 
 ---
 
-## Quick Start
+## 🌟 What Is Aster?
+
+Aster is your personal knowledge navigator. It ingests documents, images, audio, and data from anywhere - your iPhone, Mac, or browser - and weaves them into clean, connected markdown ready for your knowledge base.
+
+**Process from anywhere:**
+- 📱 iPhone (web interface or shortcuts)
+- 💻 Mac (command line or web)
+- 🌐 Any browser
+- 🔗 Obsidian, Notion, or plain markdown
+
+**Any format:**
+```
+📸 Photos → 🎙️ Audio → 📄 PDFs → 💼 Excel → 📝 Text → ✨ Connected Knowledge
+```
+
+---
+
+## 🚀 Quick Start (iPhone-First)
+
+### Step 1: Start Aster on Your Mac
 
 ```bash
-# Install dependencies
-cd mdclean_universal
-pip install -r requirements.txt
+cd aster
 
-# System tools (macOS)
-brew install tesseract ghostscript poppler pandoc ollama
+# Install dependencies
+pip3 install -r requirements.txt
+brew install tesseract poppler pandoc ollama ffmpeg
+
+# Pull Ollama model
 ollama pull llama3.2:1b
 
-# Run it
-./mdclean_universal.py document.pdf
-./mdclean_universal.py photo.jpg
-
-# CSV with automatic AI analysis
-./mdclean_universal.py budget.csv --analyze
+# Start web server
+python3 aster_web.py
 ```
+
+### Step 2: Access from iPhone
+
+1. Note your Mac's IP (shown when server starts)
+2. Open Safari on iPhone: `http://YOUR-MAC-IP:8888`
+3. Drop files, watch magic happen!
+
+**That's it!** ✨
+
+See [IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md) for iOS Shortcuts and advanced features.
 
 ---
 
-## Project Structure
+## 📚 Supported Formats
 
-```
-mdclean_universal/
-├── mdclean_universal.py       # Main tool (images, docs, audio, text)
-├── csv_handler.py              # CSV financial processor
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
-├── docs/
-│   ├── ENHANCEMENT_PROPOSAL.md    # Technical design & architecture
-│   ├── MIGRATION_GUIDE.md         # Migrate from old tools
-│   ├── CSV_FINANCIAL_WORKFLOW.md  # Financial management guide
-│   └── QUICKSTART_CSV.md          # CSV quick start
-└── examples/
-    ├── sample_transactions.csv
-    └── sample_transactions_converted.md
-```
+### Documents
+- **PDF**: Books, papers, scanned documents (with OCR)
+- **Office**: DOCX, PPTX, Excel
+- **Ebooks**: EPUB
+- **Web**: HTML pages
 
----
+### Media
+- **Images**: JPG, PNG (OCR extracts text)
+- **Audio**: MP3, M4A, WAV, WMA (transcription)
 
-## Key Features
+### Data
+- **CSV/Excel**: Financial analysis with Ollama
+- **Text**: TXT, Markdown (cleanup and structuring)
 
-### 🔒 Privacy-First Financial Management
-- Import bank CSV → Beautiful markdown tables
-- Local AI analysis with Ollama (no cloud!)
-- Track budget, portfolio, debt, net worth
-- Export to PDF or back to CSV
-- See: [docs/CSV_FINANCIAL_WORKFLOW.md](docs/CSV_FINANCIAL_WORKFLOW.md)
-
-### 📸 OCR for Everything
-- Photos of handwritten notes
-- Screenshots of text
-- Scanned documents
-- Book pages
-- Whiteboard captures
-
-### 🎙️ Audio Transcription
-- Sermons, lectures, interviews
-- Voice memos, podcasts
-- With punctuation and structure
-- Integration with existing mp3_txt tools
-
-### 📄 Document Processing
-- PDFs (text and scanned)
-- EPUB books
-- Word documents (DOCX)
-- Web pages (HTML)
-
-### 🤖 AI-Enhanced
-- Ollama 3.2 1B for text cleanup
-- Automatic punctuation & capitalization
-- Error correction
-- Financial insights
-- Budget recommendations
-
-### 💎 Knowledge Management Ready
-- YAML frontmatter
-- Metadata extraction
-- Tag generation
-- Obsidian math notation
-- Wikilink support (coming soon)
+### Special Features
+- **Multilingual**: Excellent Afrikaans support
+- **Financial**: Auto-analyze transactions, budgets
+- **Handwritten**: OCR for handwritten notes
+- **Scanned**: Handle scanned PDFs
 
 ---
 
-## Usage Examples
+## 🎯 Use Cases
 
-### Process Any Document
+### Personal Knowledge Management
 ```bash
-# Images (OCR)
-./mdclean_universal.py notes.jpg
-./mdclean_universal.py handwritten.jpg --handwriting
+# Process book to your vault
+aster "Deep Work.pdf" --preset book -o ~/Vault/Books/
 
-# PDFs
-./mdclean_universal.py research_paper.pdf
-./mdclean_universal.py scanned_book.pdf
+# OCR handwritten meeting notes
+aster whiteboard.jpg --preset ocr -o ~/Vault/Meetings/
 
-# Audio (coming soon - use mp3_txt for now)
-./mdclean_universal.py sermon.mp3
+# Transcribe lecture
+aster lecture.mp3 --preset transcribe -o ~/Vault/Classes/
+```
 
-# Financial CSV with automatic AI analysis
-./mdclean_universal.py transactions.csv --analyze
-./mdclean_universal.py budget.csv --csv-mode budget --analyze
+### Financial Management
+```bash
+# Analyze bank statement (locally, private)
+aster transactions.csv --preset financial --analyze
 
-# Or use standalone CSV handler
-python3 csv_handler.py transactions.csv --mode financial
+# Result: Markdown with:
+# - Income/expense breakdown
+# - Category analysis
+# - AI insights from Ollama
+# - Obsidian math formulas
+```
+
+### From iPhone
+1. Take photo of receipt
+2. Share → Process with Aster
+3. Appears in Obsidian vault
+4. Tagged and structured!
+
+---
+
+## 🎨 Philosophy: Navigation as Clarity
+
+Aster isn't just another document converter. It's a **lodestar** in your expanding night-sky of information:
+
+### Traditional Tools
+❌ Convert file → Done
+❌ Each tool for each format
+❌ No connection between items
+❌ Search but don't discover
+
+### Aster Approach
+✅ Extract → Structure → Clean → **Connect**
+✅ One tool for all formats
+✅ Find relationships and patterns
+✅ Navigate from facts to wisdom
+
+**Metaphor:** Your notes are scattered stars. Aster reveals the constellations - the patterns, paths, and meaning hidden in plain sight.
+
+---
+
+## 🏗️ Architecture
+
+### Pipeline
+```
+Input → Extract → Structure → Clean → Connect → Navigate
+         ↓         ↓          ↓         ↓          ↓
+      OCR/Parse  Unstructured Ollama  Metadata  Knowledge
+```
+
+**1. Extract** - Get text from any source
+- OCR for images (Tesseract/PaddleOCR)
+- Parse documents (Unstructured.io)
+- Transcribe audio (Vosk)
+
+**2. Structure** - Detect semantic elements
+- Headings and hierarchy
+- Lists, tables, quotes
+- Paragraphs and sections
+
+**3. Clean** - AI-powered refinement
+- Fix OCR errors
+- Add punctuation
+- Improve formatting
+- Preserve accuracy
+
+**4. Connect** - Build relationships
+- Generate metadata
+- Extract tags
+- Link references
+- Calculate insights
+
+**5. Navigate** - Make it useful
+- Obsidian-ready frontmatter
+- Backlink suggestions
+- Math formulas
+- Action items
+
+---
+
+## 💻 Usage
+
+### Command Line
+
+```bash
+# Basic usage
+aster document.pdf
+
+# With options
+aster book.pdf --preset book --model llama3.2:3b -o ~/Vault/Books/
 
 # Batch processing
-./mdclean_universal.py --batch ~/Documents/inbox/
+aster --batch ~/Documents/to-process/
+
+# CSV with AI analysis
+aster expenses.csv --analyze --preset financial
 ```
 
-### Financial Workflow
+### Web Interface
+
 ```bash
-# Convert bank export with automatic AI analysis
-./mdclean_universal.py bank_nov_2025.csv --analyze
+# Start server
+python3 aster_web.py
 
-# Result includes:
-# - Income/expense summary
-# - Category breakdown
-# - Running balance
-# - ✨ Automatic AI insights from Ollama
-# - Obsidian math formulas
-
-# Manual analysis (if preferred)
-python3 csv_handler.py bank_nov_2025.csv --mode financial
-ollama run llama3.2:1b "[paste generated prompt]"
+# Access from:
+# - Mac: http://localhost:8888
+# - iPhone: http://YOUR-MAC-IP:8888
+# - Anywhere: http://TAILSCALE-IP:8888 (with Tailscale)
 ```
+
+### iOS Shortcuts
+
+Create "Process with Aster" shortcut:
+- Select file in Files app
+- Share → **Process with Aster**
+- Get notification when done
+- File appears in vault!
+
+See [IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md) for setup.
 
 ---
 
-## Documentation
+## ⚙️ Presets
 
-**Getting Started:**
-- [README.md](README.md) - This file
-- [docs/QUICKSTART_CSV.md](docs/QUICKSTART_CSV.md) - CSV in 5 minutes
+Optimized workflows for common tasks:
 
-**Complete Guides:**
-- [docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md) - Architecture & design
-- [docs/CSV_FINANCIAL_WORKFLOW.md](docs/CSV_FINANCIAL_WORKFLOW.md) - Financial management
-- [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) - Migrate from old tools
+### `--preset book`
+- Detect chapters as H1
+- Preserve references
+- Maintain quotes
+- Use llama3.2:3b
 
-**Examples:**
-- [examples/](examples/) - Sample files and outputs
+### `--preset ocr`
+- Aggressive OCR cleanup
+- Fix common errors
+- Structure paragraphs
+- Fast processing
+
+### `--preset transcribe`
+- Audio → text
+- Add timestamps
+- Speaker detection
+- Punctuation
+
+### `--preset financial`
+- CSV/Excel analysis
+- Calculate totals
+- Category breakdown
+- Obsidian math formulas
+- AI insights
+
+### `--preset afrikaans_religious`
+- Preserve proper nouns
+- Keep theological terms
+- Maintain liturgy format
+- Biblical references intact
+
+**Create your own!** See `tests/prompts/` for examples.
 
 ---
 
-## Key Advantages
+## 🔧 Installation
 
-### vs. Old Tools
-- ✅ **One tool** instead of many (mdcon, mdclean, mdclean_simple)
-- ✅ **Better structure detection** (Unstructured.io vs bash heuristics)
-- ✅ **Integrated workflow** (no intermediate files)
-- ✅ **CSV support** (financial management)
-- ✅ **Consistent output** (standardized frontmatter)
+### System Requirements
+- macOS, Linux, or Windows
+- Python 3.8+
+- 4GB+ RAM
+- Ollama (for AI features)
 
-### vs. Cloud Services
-- ✅ **Privacy** - All data stays local
-- ✅ **No subscriptions** - Free forever
-- ✅ **Local AI** - Ollama instead of cloud APIs
-- ✅ **No vendor lock-in** - Plain markdown files
+### Full Setup
 
-### vs. Manual Processing
-- ✅ **Automated structure detection**
-- ✅ **AI-powered cleanup**
-- ✅ **Batch processing**
-- ✅ **Consistent formatting**
-
----
-
-## Dependencies
-
-**Python packages:**
-```
-ollama>=0.1.0              # LLM interface
-unstructured[all-docs]     # Document structure
-pytesseract>=0.3.10        # OCR wrapper
-pandas>=2.0.0              # CSV processing
-```
-
-**System tools:**
 ```bash
-brew install tesseract      # OCR engine
-brew install ghostscript    # PDF to images
-brew install poppler        # PDF text extraction
-brew install pandoc         # Document conversion
-brew install ffmpeg         # Audio conversion
-brew install ollama         # Local LLM
+# Clone repository
+git clone https://github.com/yourusername/aster.git
+cd aster
+
+# Install Python packages
+pip3 install -r requirements.txt
+
+# Install system tools (macOS)
+brew install pandoc poppler tesseract ffmpeg ollama
+
+# Install and start Ollama
+ollama serve
+ollama pull llama3.2:1b  # Fast (1.3GB)
+ollama pull llama3.2:3b  # Better quality (2GB)
+
+# Test it
+python3 aster.py tests/sample.pdf
+```
+
+### For iPhone Access
+
+```bash
+# Additional web dependencies (included in requirements.txt)
+pip3 install fastapi uvicorn python-multipart
+
+# Start web server
+python3 aster_web.py
 ```
 
 ---
 
-## Status
+## 📖 Documentation
 
-**✅ Ready Now:**
-- Images (OCR)
-- PDFs (text & scanned)
-- Documents (EPUB, DOCX, HTML)
-- CSV (financial management)
-- Text cleanup
-
-**🔄 In Progress:**
-- Audio transcription integration
-- Automatic AI analysis in pipeline
-
-**🔮 Planned:**
-- Config file support
-- Custom templates
-- Wikilink generation
-- Tag extraction from content
+- **[IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md)** - Complete iPhone setup
+- **[OLLAMA_PROMPTS.md](docs/OLLAMA_PROMPTS.md)** - Optimize AI prompts
+- **[TRAINING_DATA_GUIDE.md](docs/TRAINING_DATA_GUIDE.md)** - Add your documents
+- **[RESEARCH_INTEGRATION_OPPORTUNITIES.md](docs/RESEARCH_INTEGRATION_OPPORTUNITIES.md)** - Latest tools
+- **[PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md)** - Future plans
 
 ---
 
-## Replaces These Tools
+## 🎓 Examples
 
-**From convert_to_markdown/:**
-- ❌ `mdcon` (bash) → ✅ mdclean_universal.py
-- ❌ `mdclean` (bash) → ✅ mdclean_universal.py
+### Example 1: Book Notes
+```bash
+# Input: Cal Newport - Deep Work.pdf
+aster "Deep Work.pdf" --preset book
 
-**From mp3_txt/:**
-- ❌ `mdclean.py` → ✅ mdclean_universal.py
-- ❌ `mdclean_simple.py` → ✅ mdclean_universal.py
-- ⚠️ `transcribe` - Keep for now (audio integration coming)
+# Output: Deep Work.md
+---
+source: Deep Work.pdf
+type: book
+tags: [productivity, focus, deep-work]
+---
 
-**New capabilities:**
-- ✅ CSV financial management (completely new!)
-- ✅ Enhanced OCR with preprocessing
-- ✅ Better structure detection
+# Deep Work
+
+## Part 1: The Idea
+
+### Chapter 1: Deep Work is Valuable
+
+In the new economy, three groups will have a particular advantage...
+```
+
+### Example 2: Financial Analysis
+```bash
+# Input: transactions.csv
+aster transactions.csv --analyze --preset financial
+
+# Output: transactions.md (with AI insights)
+## Summary
+**Total Income:** $4,000.00
+**Total Expenses:** $1,863.28
+**Net:** $2,136.72
+
+## AI Analysis
+Based on your spending patterns, here are key insights:
+- Food expenses (32%) are higher than average
+- Consider meal planning to reduce dining out costs
+- Savings rate of 53% is excellent
+
+## Math Notes
+Savings rate: `$= (2136.72 / 4000.00) * 100`%
+```
+
+### Example 3: Meeting Notes (iPhone)
+1. Take photo of whiteboard
+2. Share → "Process with Aster"
+3. Result in Obsidian:
+
+```markdown
+---
+source: IMG_1234.jpg
+type: meeting-notes
+date: 2025-11-13
+tags: [meeting, planning]
+---
+
+# Project Planning Meeting
+
+## Action Items
+- [ ] Complete user research by Friday
+- [ ] Schedule follow-up with design team
+- [ ] Review budget proposal
+
+## Key Decisions
+- Moving forward with Option B
+- Timeline: 6 weeks
+```
 
 ---
 
-## Support
+## 🔒 Privacy & Security
 
-**Issues:** Open an issue on GitHub
-**Questions:** See docs/ folder
-**Migration:** See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
+**All processing happens locally:**
+- ✅ No cloud uploads
+- ✅ No data collection
+- ✅ Ollama runs on your machine
+- ✅ iPhone → Mac direct connection
+- ✅ Sensitive documents stay private
+
+**Perfect for:**
+- Financial documents
+- Medical records
+- Legal papers
+- Personal journals
+- Client information
 
 ---
 
-## License
+## 🚧 Roadmap
 
-Free for personal use.
+### ✅ Phase 1: Foundation (Complete)
+- Core document processing
+- Ollama integration
+- Test suite
+- iPhone web access
+
+### 🔄 Phase 2: Enhancement (In Progress)
+- Full Unstructured integration
+- PaddleOCR (multilingual)
+- Content-type detection
+- Preset system
+
+### 📅 Phase 3: Advanced (Planned)
+- Native iOS app
+- Tailscale integration
+- Desktop GUI (Tauri)
+- Plugin ecosystem
+
+See [PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md) for details.
 
 ---
 
-**Created:** 2025-11-13
-**Status:** ✅ Production Ready
-**Version:** 1.0.0
+## 🤝 Contributing
 
-#document-processing #knowledge-management #ocr #transcription #financial #ollama #privacy
+Aster is designed for personal use but contributions welcome!
+
+**Areas for contribution:**
+- New presets for different document types
+- Improved OCR for specific languages
+- Integration with knowledge management tools
+- Documentation and examples
+
+---
+
+## 📜 License
+
+MIT License - use freely, modify as needed.
+
+---
+
+## 🙏 Acknowledgments
+
+Built on the shoulders of giants:
+- **Unstructured.io** - Document structure detection
+- **Ollama** - Local AI inference
+- **Tesseract/PaddleOCR** - OCR engines
+- **FastAPI** - Web framework
+
+Inspired by:
+- The night sky and navigation by stars
+- Obsidian's connected thought philosophy
+- The desire to make sense of chaos
+
+---
+
+## ✨ Happy Navigating!
+
+Questions? Issues? Ideas?
+
+Create an issue or reach out!
+
+---
+
+**Aster** - *Find your guiding note*
