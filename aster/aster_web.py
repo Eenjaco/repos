@@ -61,20 +61,26 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aster - Navigate your constellation of knowledge</title>
+    <title>ASTER - 8-Bit Document Processing</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1e3a5f 0%, #0f1c2e 100%);
-            color: #e0e6ed;
+            font-family: 'Press Start 2P', 'Courier New', monospace;
+            background: #000000;
+            color: #f5f5f5;
             min-height: 100vh;
             padding: 20px;
+            font-size: 12px;
         }
 
         .container {
@@ -83,48 +89,90 @@ HTML_PAGE = """
         }
 
         header {
-            text-align: center;
-            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
             padding: 20px 0;
         }
 
+        .logo {
+            font-size: 48px;
+            line-height: 1;
+        }
+
+        .header-text {
+            flex: 1;
+            text-align: center;
+        }
+
         h1 {
-            font-size: 2.5em;
-            font-weight: 300;
+            font-size: 32px;
+            font-weight: bold;
             margin-bottom: 10px;
-            color: #f5c469;
+            color: #ffffff;
+            letter-spacing: 2px;
         }
 
         .tagline {
-            font-size: 1.1em;
-            color: #9daab8;
+            font-size: 10px;
+            color: #888888;
             font-style: italic;
+            line-height: 1.6;
+        }
+
+        .stats {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+
+        .stat {
+            background: #2a3f5f;
+            width: 150px;
+            height: 75px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 3px solid #1a2f4f;
+            box-shadow: inset 0 0 0 1px #3a5f7f;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            color: #ffffff;
+            line-height: 1;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 8px;
+            color: #aaaaaa;
+            text-transform: lowercase;
         }
 
         .upload-zone {
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px dashed #4a5f7f;
-            border-radius: 12px;
-            padding: 60px 20px;
+            background: #2a3f5f;
+            border: 3px solid #1a2f4f;
+            padding: 40px 20px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 30px;
-        }
-
-        .upload-zone:hover, .upload-zone.dragover {
-            background: rgba(245, 196, 105, 0.1);
-            border-color: #f5c469;
-        }
-
-        .upload-icon {
-            font-size: 4em;
             margin-bottom: 20px;
+            box-shadow: inset 0 0 0 1px #3a5f7f;
+        }
+
+        .upload-zone:hover {
+            background: #3a4f6f;
+            border-color: #2a4f6f;
         }
 
         .upload-text {
-            font-size: 1.2em;
-            color: #9daab8;
+            font-size: 10px;
+            color: #cccccc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         input[type="file"] {
@@ -133,72 +181,96 @@ HTML_PAGE = """
 
         .options {
             display: flex;
-            gap: 15px;
+            gap: 10px;
             margin-bottom: 30px;
-            flex-wrap: wrap;
+            justify-content: center;
         }
 
-        .options select {
-            flex: 1;
-            min-width: 150px;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid #4a5f7f;
-            border-radius: 8px;
-            color: #e0e6ed;
-            font-size: 1em;
+        select, button {
+            font-family: 'Press Start 2P', 'Courier New', monospace;
+            font-size: 10px;
+            padding: 10px 15px;
+            background: #2a3f5f;
+            border: 3px solid #1a2f4f;
+            color: #ffffff;
+            cursor: pointer;
+            text-transform: lowercase;
+        }
+
+        select {
+            width: 200px;
+        }
+
+        select:hover, button:hover {
+            background: #3a4f6f;
+            border-color: #2a4f6f;
+        }
+
+        button {
+            width: 150px;
+            height: 40px;
+        }
+
+        button:active {
+            background: #1a2f4f;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .job {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 15px;
-            border-left: 4px solid #4a5f7f;
+            background: #2a3f5f;
+            border: 3px solid #1a2f4f;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: inset 0 0 0 1px #3a5f7f;
         }
 
         .job.processing {
-            border-left-color: #f5c469;
+            border-left: 5px solid #ffaa00;
         }
 
         .job.complete {
-            border-left-color: #6ec98c;
+            border-left: 5px solid #00ff00;
         }
 
         .job.failed {
-            border-left-color: #e76f51;
+            border-left: 5px solid #ff0000;
         }
 
         .job-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
             margin-bottom: 10px;
+            font-size: 10px;
         }
 
         .job-name {
-            font-weight: 600;
-            font-size: 1.1em;
+            color: #ffffff;
         }
 
         .job-status {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.9em;
-            background: rgba(255, 255, 255, 0.1);
+            color: #aaaaaa;
         }
 
         .progress-bar {
-            height: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-            overflow: hidden;
+            height: 12px;
+            background: #1a2f4f;
+            border: 2px solid #0a1f3f;
             margin: 10px 0;
         }
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #f5c469, #f5a269);
+            background: repeating-linear-gradient(
+                90deg,
+                #ffaa00,
+                #ffaa00 4px,
+                #ff8800 4px,
+                #ff8800 8px
+            );
             transition: width 0.3s;
         }
 
@@ -208,82 +280,48 @@ HTML_PAGE = """
             gap: 10px;
         }
 
-        button {
-            padding: 10px 20px;
-            background: #f5c469;
-            color: #0f1c2e;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        button:hover {
-            background: #f5a269;
-            transform: translateY(-2px);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: #e0e6ed;
-        }
-
-        .secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
         .empty-state {
             text-align: center;
             padding: 40px;
-            color: #9daab8;
+            color: #555555;
+            font-size: 10px;
         }
 
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-
-        .stat {
-            background: rgba(255, 255, 255, 0.05);
+        .feedback {
+            background: #1a2f4f;
+            border: 2px solid #0a1f3f;
             padding: 15px;
-            border-radius: 8px;
-            text-align: center;
+            margin-top: 20px;
+            min-height: 100px;
+            font-size: 9px;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            overflow-y: auto;
+            max-height: 200px;
         }
 
-        .stat-value {
-            font-size: 2em;
-            font-weight: 600;
-            color: #f5c469;
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            color: #9daab8;
-            margin-top: 5px;
+        .feedback-line {
+            margin-bottom: 5px;
         }
 
         @media (max-width: 600px) {
             h1 {
-                font-size: 2em;
+                font-size: 20px;
+            }
+
+            .stats {
+                flex-direction: column;
+                align-items: center;
             }
 
             .options {
                 flex-direction: column;
+                align-items: center;
             }
 
-            .job-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
+            select {
+                width: 100%;
+                max-width: 300px;
             }
         }
     </style>
@@ -291,52 +329,52 @@ HTML_PAGE = """
 <body>
     <div class="container">
         <header>
-            <h1>✨ Aster</h1>
-            <p class="tagline">"Lost in a night-sky of notes? Aster lights the way."</p>
+            <div class="logo">✦</div>
+            <div class="header-text">
+                <h1>ASTER</h1>
+                <p class="tagline">Navigate your<br>constellation of knowledge</p>
+            </div>
+            <div class="logo">✦</div>
         </header>
 
         <div class="stats">
             <div class="stat">
                 <div class="stat-value" id="totalJobs">0</div>
-                <div class="stat-label">Processed</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value" id="successRate">-</div>
-                <div class="stat-label">Success Rate</div>
+                <div class="stat-label">processed</div>
             </div>
             <div class="stat">
                 <div class="stat-value" id="queueSize">0</div>
-                <div class="stat-label">In Queue</div>
+                <div class="stat-label">in queue</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="successRate">--</div>
+                <div class="stat-label">success rate</div>
             </div>
         </div>
 
         <div class="upload-zone" id="dropZone">
-            <div class="upload-icon">📁</div>
-            <div class="upload-text">Drop files here or tap to browse</div>
+            <div class="upload-text">▼ drop files here ▼</div>
             <input type="file" id="fileInput" multiple accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png,.html,.txt,.md,.csv,.xlsx,.epub,.mp3,.wav,.m4a,.wma">
         </div>
 
         <div class="options">
-            <select id="preset">
-                <option value="auto">Auto-detect</option>
-                <option value="book">Book</option>
-                <option value="ocr">OCR</option>
-                <option value="transcribe">Transcribe</option>
-                <option value="financial">Financial</option>
-                <option value="afrikaans_religious">Afrikaans Religious</option>
-            </select>
-
             <select id="model">
-                <option value="llama3.2:1b">llama3.2:1b (Fast)</option>
-                <option value="llama3.2:3b">llama3.2:3b (Better)</option>
+                <option value="llama3.2:1b">llama 3.2: 1B (fast)</option>
+                <option value="llama3.2:3b">llama 3.2: 3B (faster)</option>
+                <option value="qwen2.5:0.5b">qwen 2.5: 0.5B (fastest)</option>
             </select>
         </div>
 
         <div id="jobs"></div>
 
         <div class="empty-state" id="emptyState">
-            <p>No documents processed yet</p>
-            <p style="margin-top: 10px; font-size: 0.9em;">Drop a file above to start</p>
+            <p>▶ NO DOCUMENTS PROCESSED YET ◀</p>
+            <p style="margin-top: 10px;">DROP A FILE TO START</p>
+        </div>
+
+        <div class="feedback" id="feedback">
+            <div class="feedback-line">> ASTER v1.0 INITIALIZED</div>
+            <div class="feedback-line">> READY TO PROCESS DOCUMENTS</div>
         </div>
     </div>
 
@@ -345,9 +383,23 @@ HTML_PAGE = """
         const fileInput = document.getElementById('fileInput');
         const jobsContainer = document.getElementById('jobs');
         const emptyState = document.getElementById('emptyState');
+        const feedbackEl = document.getElementById('feedback');
 
         let jobs = {};
         let stats = { total: 0, success: 0, queue: 0 };
+
+        function addFeedback(message) {
+            const line = document.createElement('div');
+            line.className = 'feedback-line';
+            line.textContent = '> ' + message;
+            feedbackEl.appendChild(line);
+            feedbackEl.scrollTop = feedbackEl.scrollHeight;
+
+            // Keep only last 20 lines
+            while (feedbackEl.children.length > 20) {
+                feedbackEl.removeChild(feedbackEl.firstChild);
+            }
+        }
 
         // Drag and drop
         dropZone.addEventListener('click', () => fileInput.click());
@@ -378,12 +430,12 @@ HTML_PAGE = """
         }
 
         async function uploadFile(file) {
-            const preset = document.getElementById('preset').value;
             const model = document.getElementById('model').value;
+            addFeedback(`UPLOADING: ${file.name}`);
 
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('preset', preset);
+            formData.append('preset', 'auto');
             formData.append('model', model);
 
             try {
@@ -395,17 +447,20 @@ HTML_PAGE = """
                 const data = await response.json();
 
                 if (response.ok) {
-                    addJob(data.job_id, file.name, preset);
+                    addFeedback(`JOB CREATED: ${data.job_id}`);
+                    addJob(data.job_id, file.name, model);
                     pollJob(data.job_id);
                 } else {
+                    addFeedback(`ERROR: ${data.error}`);
                     alert('Upload failed: ' + data.error);
                 }
             } catch (error) {
+                addFeedback(`ERROR: ${error.message}`);
                 alert('Upload failed: ' + error.message);
             }
         }
 
-        function addJob(jobId, filename, preset) {
+        function addJob(jobId, filename, model) {
             emptyState.style.display = 'none';
 
             const jobEl = document.createElement('div');
@@ -414,18 +469,18 @@ HTML_PAGE = """
             jobEl.innerHTML = `
                 <div class="job-header">
                     <div class="job-name">${filename}</div>
-                    <div class="job-status">Processing...</div>
+                    <div class="job-status">PROCESSING...</div>
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: 10%"></div>
                 </div>
-                <div style="font-size: 0.9em; color: #9daab8; margin-top: 10px;">
-                    Preset: ${preset}
+                <div style="font-size: 8px; color: #888888; margin-top: 10px;">
+                    model: ${model}
                 </div>
             `;
 
             jobsContainer.prepend(jobEl);
-            jobs[jobId] = { filename, preset, el: jobEl };
+            jobs[jobId] = { filename, model, el: jobEl };
 
             stats.queue++;
             updateStats();
@@ -445,8 +500,10 @@ HTML_PAGE = """
                         if (data.status === 'complete') {
                             stats.success++;
                             stats.queue--;
+                            addFeedback(`COMPLETE: ${jobs[jobId].filename}`);
                         } else {
                             stats.queue--;
+                            addFeedback(`FAILED: ${jobs[jobId].filename}`);
                         }
                         stats.total++;
                         updateStats();
@@ -465,24 +522,24 @@ HTML_PAGE = """
 
             if (data.status === 'complete') {
                 el.className = 'job complete';
-                el.querySelector('.job-status').textContent = '✓ Complete';
+                el.querySelector('.job-status').textContent = '✓ COMPLETE';
                 el.querySelector('.progress-fill').style.width = '100%';
 
                 const actions = document.createElement('div');
                 actions.className = 'job-actions';
                 actions.innerHTML = `
-                    <button onclick="downloadFile('${jobId}')">Download</button>
-                    <button class="secondary" onclick="viewFile('${jobId}')">View</button>
+                    <button onclick="downloadFile('${jobId}')">download</button>
+                    <button onclick="viewFile('${jobId}')">view</button>
                 `;
                 el.appendChild(actions);
             } else if (data.status === 'failed') {
                 el.className = 'job failed';
-                el.querySelector('.job-status').textContent = '✗ Failed';
-                el.innerHTML += `<div style="color: #e76f51; margin-top: 10px;">${data.error || 'Unknown error'}</div>`;
+                el.querySelector('.job-status').textContent = '✗ FAILED';
+                el.innerHTML += `<div style="color: #ff0000; margin-top: 10px; font-size: 9px;">${data.error || 'UNKNOWN ERROR'}</div>`;
             } else {
                 const progress = data.progress || 50;
                 el.querySelector('.progress-fill').style.width = progress + '%';
-                el.querySelector('.job-status').textContent = 'Processing ' + progress + '%...';
+                el.querySelector('.job-status').textContent = progress + '%';
             }
         }
 
@@ -490,7 +547,7 @@ HTML_PAGE = """
             document.getElementById('totalJobs').textContent = stats.total;
             document.getElementById('queueSize').textContent = stats.queue;
 
-            const rate = stats.total > 0 ? Math.round((stats.success / stats.total) * 100) + '%' : '-';
+            const rate = stats.total > 0 ? Math.round((stats.success / stats.total) * 100) + '%' : '--';
             document.getElementById('successRate').textContent = rate;
         }
 
