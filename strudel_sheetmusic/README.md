@@ -1,12 +1,13 @@
 # Strudel Sheet Music Converter
 
-An intelligent app that transforms PDF sheet music into playable Strudel (TidalCycles) code, bridging traditional music notation with live coding.
+An intelligent app that transforms both PDF sheet music and audio recordings into playable Strudel (TidalCycles) code, bridging traditional music notation and recorded audio with live coding.
 
 ## Overview
 
 This application enables musicians and live coders to:
-- Scan PDF sheet music using Optical Music Recognition (OMR)
-- Convert notation to MIDI format
+- **From Sheet Music**: Scan PDF sheet music using Optical Music Recognition (OMR)
+- **From Audio**: Analyze audio recordings to extract musical features (NEW!)
+- Convert notation or audio to MIDI format
 - Generate Strudel/TidalCycles code snippets
 - Map different instrumental parts to specific sounds
 - Apply historical tuning systems (Werkmeister temperaments)
@@ -18,12 +19,14 @@ This application enables musicians and live coders to:
 strudel_sheetmusic/
 ├── src/
 │   ├── omr/          # Optical Music Recognition processing
+│   ├── audio/        # Audio analysis (BPM, key, chords, melody) [NEW!]
 │   ├── midi/         # MIDI conversion and processing
 │   ├── strudel/      # Strudel code generation
 │   ├── mapping/      # Instrument-to-sound mapping
 │   └── tuning/       # Werkmeister tuning system implementations
-├── samples/          # Training and test sheet music PDFs
-│   ├── organ/        # Specialized organ music (multi-staff, complex)
+├── samples/          # Training and test data
+│   ├── audio/        # Audio recordings for analysis [NEW!]
+│   ├── organ/        # Organ sheet music (multi-staff, complex)
 │   ├── guitar/       # Guitar tablature and notation
 │   ├── voice/        # Vocal scores
 │   ├── drums/        # Percussion notation
@@ -33,8 +36,9 @@ strudel_sheetmusic/
 └── tests/            # Test suite
 ```
 
-## Workflow
+## Workflows
 
+### Sheet Music → Strudel (PDF Input)
 1. **PDF Input** → Upload sheet music PDF
 2. **OMR Processing** → Scan and recognize musical notation
 3. **MIDI Conversion** → Convert recognized notes to MIDI format
@@ -42,6 +46,14 @@ strudel_sheetmusic/
 5. **Tuning Application** → Apply Werkmeister or other temperaments
 6. **Code Generation** → Generate Strudel code snippets
 7. **Playback** → Execute in Strudel environment
+
+### Audio → Strudel (Recording Input) [NEW!]
+1. **Audio Input** → Upload audio recording (MP3, WAV, etc.)
+2. **Audio Analysis** → Extract BPM, key, chords, melody
+3. **MIDI Conversion** → Convert detected notes to MIDI
+4. **Tuning Application** → Apply temperaments (optional)
+5. **Code Generation** → Generate Strudel code snippets
+6. **Playback** → Execute in Strudel environment
 
 ## Key Features
 
@@ -78,9 +90,18 @@ strudel_sheetmusic/
 - Custom tuning definition support
 - Per-instrument tuning configuration
 
+### Audio Analysis [NEW!]
+- **BPM Detection** - Automatic tempo detection from recordings
+- **Key Detection** - Musical key identification (e.g., C major, A minor)
+- **Chord Detection** - Chord progression analysis over time
+- **Melody Extraction** - Main melody converted to MIDI notes
+- **Beat Tracking** - Precise beat position detection
+- **Pitch Detection** - Frequency-to-MIDI conversion for monophonic audio
+
 ## Technologies
 
 - **OMR Engine**: TBD (Audiveris, MuseScore's OMR, or custom solution)
+- **Audio Analysis**: `librosa` (core), `CREPE` (pitch), `basic-pitch` (audio-to-MIDI)
 - **MIDI Processing**: Python `mido` or similar
 - **PDF Processing**: `pdf2image`, `Pillow` for image manipulation
 - **Strudel**: Integration with Strudel REPL/API
@@ -123,21 +144,42 @@ The `samples/organ/` directory is ideal for initial training because:
 
 ## Getting Started
 
-(To be completed as implementation progresses)
-
 ### Prerequisites
 - Python 3.8+
-- Node.js (for Strudel integration)
-- Strudel environment
+- Node.js (for Strudel integration - optional)
+- Strudel environment (for playback)
 
 ### Installation
 ```bash
-# Instructions coming soon
+# Clone and navigate to project
+cd strudel_sheetmusic
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# Install core dependencies
+pip install -r requirements.txt
+
+# Install audio analysis dependencies (optional)
+pip install -r requirements_audio.txt
 ```
 
 ### Usage
 ```bash
-# Instructions coming soon
+# Tuning system demos (working now!)
+python cli.py show-tuning werkmeister1
+python cli.py compare-tunings C#4
+
+# Audio analysis (NEW! - requires librosa)
+python cli.py analyze-audio song.mp3
+python cli.py analyze-audio song.mp3 --detect-chords --extract-melody --show-beats
+
+# PDF processing
+python cli.py pdf-to-images sheet_music.pdf -o output/
+
+# Run all examples
+python examples/quickstart.py
 ```
 
 ## Contributing
@@ -148,12 +190,39 @@ This is an experimental project. Documentation and contribution guidelines will 
 
 TBD
 
+## Use Cases
+
+### 1. Learn Songs by Ear
+- Upload an MP3 of your favorite song
+- Extract melody, chords, and rhythm automatically
+- Get Strudel code to recreate and modify sections
+- Perfect for musicians learning by ear
+
+### 2. Sheet Music to Live Coding
+- Upload PDF of classical sheet music (Bach, Beethoven, etc.)
+- Get playable Strudel code with authentic historical tunings
+- Remix classical pieces with modern electronic elements
+- Ideal for organ music with Werkmeister temperaments
+
+### 3. Music Education
+- Analyze songs to understand chord progressions
+- Study melody construction and harmony
+- Interactive demonstrations of music theory concepts
+- Compare different tuning systems side-by-side
+
+### 4. Live Performance Tool
+- Prepare classical or recorded material for live coding sets
+- Quick transcription of melodic ideas
+- Build a library of patterns from various sources
+- Integrate traditional and electronic music seamlessly
+
 ## Notes
 
 - Organ music provides excellent training data due to its complexity
 - Werkmeister temperaments are historically important for baroque organ music
 - Strudel's pattern-based syntax aligns well with musical phrase structures
-- The challenge lies in translating traditional notation's expressiveness to code
+- Audio analysis enables "learning by ear" workflows
+- Both PDF and audio inputs lead to the same MIDI → Strudel pipeline
 
 ## Future Possibilities
 
@@ -162,3 +231,7 @@ TBD
 - Integration with other live coding environments (SuperCollider, Sonic Pi)
 - Mobile app for quick scanning and conversion
 - Cloud-based processing for complex scores
+- Source separation (vocals, drums, bass, other) before analysis
+- Real-time audio analysis for live performance
+- Browser-based audio analysis using TensorFlow.js
+- Collaborative pattern sharing and remixing community

@@ -1,0 +1,41 @@
+# Audio Analysis Dependencies
+# Install with: pip install -r requirements_audio.txt
+
+# Core audio processing (REQUIRED)
+librosa>=0.10.0
+soundfile>=0.12.0
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Audio file format support
+audioread>=3.0.0
+
+# Visualization (optional but useful)
+matplotlib>=3.7.0
+
+# Advanced pitch detection (OPTIONAL - very accurate but slower)
+# Uncomment if you want best pitch detection accuracy
+# crepe>=0.0.13
+# tensorflow>=2.14.0  # Required by crepe
+
+# Audio-to-MIDI conversion (OPTIONAL - recommended)
+# Uncomment for polyphonic audio-to-MIDI
+# basic-pitch>=0.2.0
+# tensorflow>=2.14.0  # Required by basic-pitch
+
+# Advanced beat tracking (OPTIONAL)
+# Uncomment for better beat detection in complex music
+# madmom>=0.16.0
+
+# Source separation (OPTIONAL - splits vocals/drums/bass/other)
+# Uncomment for stem separation before analysis
+# Warning: Large models, slow processing
+# demucs>=4.0.0
+# torch>=2.0.0  # Required by demucs
+
+# Resampling and audio conversion
+# resampy>=0.4.2
+# numba>=0.57.0  # Used by librosa for speed
+
+# Additional useful tools
+pydub>=0.25.0  # Audio manipulation and format conversion
