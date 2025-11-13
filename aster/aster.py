@@ -226,30 +226,210 @@ class AudioHandler:
 
         return converted_path
 
+    def _get_audio_duration(self, audio_path: Path) -> float:
+        """Get audio duration in seconds using ffprobe"""
+        try:
+            import json
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_format',
+                str(audio_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+            return float(data['format']['duration'])
+        except Exception as e:
+            print(f"  Warning: Could not get audio duration: {e}")
+            return 0
+
+    def _split_audio_into_chunks(self, audio_path: Path, chunk_minutes: int = 5) -> list:
+        """Split large audio file into smaller chunks for parallel processing"""
+        duration = self._get_audio_duration(audio_path)
+        chunk_seconds = chunk_minutes * 60
+        num_chunks = int(duration / chunk_seconds) + 1
+
+        print(f"  Splitting {duration/60:.1f} min audio into {num_chunks} chunks...")
+
+        chunks = []
+        chunk_dir = Path(tempfile.gettempdir()) / f"{audio_path.stem}_chunks"
+        chunk_dir.mkdir(exist_ok=True)
+
+        for i in range(num_chunks):
+            start_time = i * chunk_seconds
+            chunk_path = chunk_dir / f"chunk_{i:03d}.wav"
+
+            # Extract chunk with ffmpeg
+            cmd = [
+                'ffmpeg',
+                '-i', str(audio_path),
+                '-ss', str(start_time),
+                '-t', str(chunk_seconds),
+                '-ar', '16000',  # 16kHz for Vosk
+                '-ac', '1',       # Mono
+                '-y',
+                str(chunk_path)
+            ]
+
+            subprocess.run(cmd, capture_output=True, check=True)
+            chunks.append((chunk_path, start_time, i))
+            print(f"    Chunk {i+1}/{num_chunks} created")
+
+        return chunks
+
+    def _transcribe_single_file(self, audio_path: Path) -> str:
+        """Transcribe a single audio file with Vosk"""
+        try:
+            import vosk
+            import wave
+            import json
+
+            # Download model if not exists
+            model_name = "vosk-model-small-en-us-0.15"
+            model_path = Path.home() / ".cache" / "vosk" / model_name
+
+            if not model_path.exists():
+                print(f"  Downloading Vosk model {model_name}...")
+                model = vosk.Model(model_name=model_name)
+            else:
+                model = vosk.Model(str(model_path))
+
+            # Open audio file
+            wf = wave.open(str(audio_path), "rb")
+
+            # Check audio format
+            if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getframerate() != 16000:
+                print(f"  Warning: Audio format not optimal. Expected: 16kHz, mono, 16-bit")
+
+            # Create recognizer
+            rec = vosk.KaldiRecognizer(model, wf.getframerate())
+            rec.SetWords(True)
+
+            # Transcribe
+            results = []
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                if rec.AcceptWaveform(data):
+                    result = json.loads(rec.Result())
+                    if 'text' in result and result['text']:
+                        results.append(result['text'])
+
+            # Get final result
+            final = json.loads(rec.FinalResult())
+            if 'text' in final and final['text']:
+                results.append(final['text'])
+
+            wf.close()
+            return ' '.join(results)
+
+        except Exception as e:
+            raise RuntimeError(f"Vosk transcription failed: {e}")
+
+    def _transcribe_chunk_worker(self, chunk_info: tuple) -> dict:
+        """Worker function for parallel transcription"""
+        chunk_path, start_time, chunk_num = chunk_info
+        try:
+            text = self._transcribe_single_file(chunk_path)
+            return {
+                'chunk_num': chunk_num,
+                'start_time': start_time,
+                'text': text,
+                'success': True
+            }
+        except Exception as e:
+            return {
+                'chunk_num': chunk_num,
+                'start_time': start_time,
+                'text': '',
+                'success': False,
+                'error': str(e)
+            }
+
+    def _transcribe_chunks_parallel(self, chunks: list, max_workers: int = 4) -> str:
+        """Transcribe audio chunks in parallel"""
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        results = []
+        total_chunks = len(chunks)
+
+        print(f"  Transcribing {total_chunks} chunks with {max_workers} workers...")
+
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all chunks
+            futures = {
+                executor.submit(self._transcribe_single_file, chunk[0]): chunk
+                for chunk in chunks
+            }
+
+            # Process as they complete
+            completed = 0
+            for future in as_completed(futures):
+                chunk_info = futures[future]
+                chunk_path, start_time, chunk_num = chunk_info
+
+                try:
+                    text = future.result()
+                    completed += 1
+                    results.append({
+                        'chunk_num': chunk_num,
+                        'start_time': start_time,
+                        'text': text
+                    })
+                    print(f"    Chunk {completed}/{total_chunks} complete ({completed/total_chunks*100:.0f}%)")
+                except Exception as e:
+                    print(f"    Chunk {chunk_num} failed: {e}")
+                    completed += 1
+
+        # Sort by chunk number and reassemble
+        results.sort(key=lambda x: x['chunk_num'])
+
+        # Format with timestamps
+        formatted_parts = []
+        for result in results:
+            minutes = int(result['start_time'] // 60)
+            seconds = int(result['start_time'] % 60)
+            timestamp = f"[{minutes:02d}:{seconds:02d}]"
+            formatted_parts.append(f"{timestamp} {result['text']}")
+
+        # Cleanup chunk files
+        try:
+            chunk_dir = chunks[0][0].parent
+            for chunk_path, _, _ in chunks:
+                chunk_path.unlink(missing_ok=True)
+            chunk_dir.rmdir()
+        except Exception as e:
+            print(f"  Warning: Could not cleanup chunks: {e}")
+
+        return '\n\n'.join(formatted_parts)
+
     def extract_text(self, audio_path: Path) -> str:
         """
-        Transcribe audio file.
-
-        For now, we'll integrate with existing transcribe_vosk_stream.py logic.
+        Transcribe audio file with Vosk.
+        Automatically chunks large files for parallel processing.
         Returns: Transcribed text
         """
-        # Convert .wma and other formats to .wav first
-        if audio_path.suffix.lower() in ['.wma', '.m4a', '.flac', '.ogg']:
+        # Convert to WAV format if needed
+        if audio_path.suffix.lower() != '.wav':
             print(f"  Converting {audio_path.suffix} to .wav...")
             audio_path = self.convert_audio_format(audio_path, 'wav')
 
-        # Import transcription functionality
-        try:
-            # Try to import from mp3_txt directory
-            import transcribe_vosk_stream
+        # Get duration
+        duration = self._get_audio_duration(audio_path)
+        print(f"  Audio duration: {duration/60:.1f} minutes")
 
-            # Use existing transcription logic
-            # This is a simplified version - actual implementation would
-            # integrate with the existing transcribe_vosk_stream.py
-            raise NotImplementedError("Audio transcription - integrate with existing transcribe_vosk_stream.py")
+        # Decide on processing strategy
+        if duration > 600:  # > 10 minutes
+            print(f"  Large audio file detected, using parallel chunking...")
+            chunks = self._split_audio_into_chunks(audio_path, chunk_minutes=5)
+            transcript = self._transcribe_chunks_parallel(chunks, max_workers=4)
+        else:
+            print(f"  Transcribing with Vosk...")
+            transcript = self._transcribe_single_file(audio_path)
 
-        except ImportError:
-            raise RuntimeError("Audio transcription module not found")
+        return transcript
 
 
 class DocumentParser:
