@@ -27,6 +27,8 @@ import json
 from datetime import datetime
 from typing import Optional, Dict
 import shutil
+import socket
+import qrcode
 
 # Configuration
 UPLOAD_DIR = Path("uploads")
@@ -693,25 +695,59 @@ async def delete_job(job_id: str):
 # Main
 # =============================================================================
 
+def get_local_ip():
+    """Get local IP address for WiFi connection"""
+    try:
+        # Create a socket to find local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "localhost"
+
+def generate_qr_code(url):
+    """Generate ASCII QR code for terminal display"""
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    qr.make()
+
+    # Generate ASCII QR code
+    output = []
+    matrix = qr.get_matrix()
+    for row in matrix:
+        line = ""
+        for cell in row:
+            line += "██" if cell else "  "
+        output.append(line)
+    return "\n".join(output)
+
 if __name__ == "__main__":
     import uvicorn
+
+    # Get local IP and generate QR code
+    local_ip = get_local_ip()
+    url = f"http://{local_ip}:8888"
+    qr_code = generate_qr_code(url)
 
     print("""
     ╔═══════════════════════════════════════════════════════════╗
     ║                    ✨ Aster Web Server                   ║
     ║         Navigate your constellation of knowledge         ║
     ╚═══════════════════════════════════════════════════════════╝
+    """)
 
-    Starting server on: http://0.0.0.0:8888
+    print(f"    📱 Scan this QR code with your iPhone:\n")
+    print("    " + "\n    ".join(qr_code.split("\n")))
 
-    Access from:
+    print(f"""
+    🌐 Access from:
       • This Mac: http://localhost:8888
-      • iPhone/iPad (same WiFi): http://YOUR-MAC-IP:8888
-      • Anywhere (with Tailscale): http://TAILSCALE-IP:8888
+      • iPhone/iPad: {url}
+      • Or scan the QR code above ☝️
 
-    To find your Mac's IP:
-      • System Settings → Network → Wi-Fi → Details → IP Address
-      • Or run: ifconfig | grep "inet " | grep -v 127.0.0.1
+    💡 Tip: Bookmark on iPhone home screen for quick access!
 
     Press Ctrl+C to stop
     """)
