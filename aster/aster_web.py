@@ -708,18 +708,34 @@ def get_local_ip():
         return "localhost"
 
 def generate_qr_code(url):
-    """Generate ASCII QR code for terminal display"""
+    """Generate ASCII QR code for terminal display (50% width and height)"""
     qr = qrcode.QRCode(border=1, box_size=1)
     qr.add_data(url)
     qr.make()
 
-    # Generate compact ASCII QR code (single characters)
+    # Generate compact QR code using half-block characters (50% height)
     output = []
     matrix = qr.get_matrix()
-    for row in matrix:
+
+    # Process two rows at a time
+    for i in range(0, len(matrix), 2):
         line = ""
-        for cell in row:
-            line += "█" if cell else " "
+        top_row = matrix[i]
+        bottom_row = matrix[i + 1] if i + 1 < len(matrix) else [False] * len(top_row)
+
+        for j in range(len(top_row)):
+            top = top_row[j]
+            bottom = bottom_row[j]
+
+            if top and bottom:
+                line += "█"  # Both black
+            elif top and not bottom:
+                line += "▀"  # Top black, bottom white
+            elif not top and bottom:
+                line += "▄"  # Top white, bottom black
+            else:
+                line += " "  # Both white
+
         output.append(line)
     return "\n".join(output)
 
