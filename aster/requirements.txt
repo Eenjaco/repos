@@ -16,7 +16,7 @@ pandas>=2.0.0              # Excel and CSV processing
 openpyxl>=3.1.0            # Excel file reading (.xlsx)
 
 # Audio transcription (optional - reuse from mp3_txt)
-vosk>=0.3.45               # Speech recognition
+vosk>=0.3.44               # Speech recognition
 soundfile>=0.12.1          # Audio file reading
 
 # Image processing (optional, for OCR preprocessing)
