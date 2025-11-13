@@ -27,29 +27,40 @@ Aster is your personal knowledge navigator. It ingests documents, images, audio,
 
 ## 🚀 Quick Start (iPhone-First)
 
-### Step 1: Start Aster on Your Mac
+### One-Command Install
 
 ```bash
+# Clone and install everything automatically
+git clone <repository-url> aster
 cd aster
+./install.sh  # Installs Python 3.12, Tesseract (163 languages), Ollama, and all dependencies
 
+# Start web server with QR code
+./aster_web
+```
+
+**Scan the QR code with your iPhone camera** → Opens Safari → Start uploading! 📱✨
+
+### Manual Setup (if needed)
+
+```bash
 # Install dependencies
 pip3 install -r requirements.txt
-brew install tesseract poppler pandoc ollama ffmpeg
+brew install python@3.12 tesseract tesseract-lang poppler pandoc ollama ffmpeg
 
 # Pull Ollama model
 ollama pull llama3.2:1b
 
 # Start web server
-python3 aster_web.py
+./aster_web  # Shows QR code for iPhone
 ```
 
-### Step 2: Access from iPhone
-
-1. Note your Mac's IP (shown when server starts)
-2. Open Safari on iPhone: `http://YOUR-MAC-IP:8888`
-3. Drop files, watch magic happen!
-
-**That's it!** ✨
+**Features:**
+- 🎮 **8-bit retro interface** with pixel-perfect design
+- 📱 **Scan QR code** for instant iPhone connection
+- ⚡ **Real-time progress** - watch processing live
+- 🎨 **Dark mode** optimized for mobile
+- 🔒 **100% local** - no cloud uploads
 
 See [IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md) for iOS Shortcuts and advanced features.
 
@@ -256,52 +267,70 @@ Optimized workflows for common tasks:
 ## 🔧 Installation
 
 ### System Requirements
-- macOS, Linux, or Windows
-- Python 3.8+
-- 4GB+ RAM
-- Ollama (for AI features)
+- **macOS 10.15+** or **Linux (Ubuntu 20.04+)**
+- **Python 3.12** (auto-installed by installer)
+- **4GB+ RAM** (8GB recommended)
+- **~5GB free space** (for dependencies and models)
 
-### Full Setup
+### Automated Installation (Recommended)
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/aster.git
+git clone <repository-url> aster
 cd aster
 
-# Install Python packages
-pip3 install -r requirements.txt
+# One command installs everything
+./install.sh
 
-# Install system tools (macOS)
-brew install pandoc poppler tesseract ffmpeg ollama
-
-# Install and start Ollama
-ollama serve
-ollama pull llama3.2:1b  # Fast (1.3GB)
-ollama pull llama3.2:3b  # Better quality (2GB)
-
-# Test it
-python3 aster.py tests/sample.pdf
+# Takes 15-45 minutes depending on internet speed
+# Installs: Python 3.12, Tesseract (163 languages), Ollama, all packages
 ```
 
-### For iPhone Access
+**What gets installed:**
+- ✅ Python 3.12 + virtual environment
+- ✅ Tesseract OCR with 163 languages (including Afrikaans)
+- ✅ Ollama + llama3.2:1b model (1.3GB)
+- ✅ Pandoc, Poppler, FFmpeg
+- ✅ All Python packages (~500MB)
+- ✅ NLTK data for text processing
+- ✅ Directory structure for training data
+
+### Manual Installation
+
+See **[INSTALL.md](INSTALL.md)** for detailed manual installation steps and troubleshooting.
+
+### Export to Another Computer
 
 ```bash
-# Additional web dependencies (included in requirements.txt)
-pip3 install fastapi uvicorn python-multipart
+# Create export package
+./create_export.sh
 
-# Start web server
-python3 aster_web.py
+# Creates: aster-export-TIMESTAMP.zip (~5-10MB)
+# Transfer to new computer and run ./install.sh
 ```
+
+See **[EXPORT_GUIDE.md](EXPORT_GUIDE.md)** for complete transfer instructions.
 
 ---
 
 ## 📖 Documentation
 
-- **[IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md)** - Complete iPhone setup
-- **[OLLAMA_PROMPTS.md](docs/OLLAMA_PROMPTS.md)** - Optimize AI prompts
-- **[TRAINING_DATA_GUIDE.md](docs/TRAINING_DATA_GUIDE.md)** - Add your documents
-- **[RESEARCH_INTEGRATION_OPPORTUNITIES.md](docs/RESEARCH_INTEGRATION_OPPORTUNITIES.md)** - Latest tools
-- **[PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md)** - Future plans
+### Getting Started
+- **[INSTALL.md](INSTALL.md)** - Complete installation guide
+- **[EXPORT_GUIDE.md](EXPORT_GUIDE.md)** - Transfer to another computer
+- **[SESSION_SUMMARY.md](SESSION_SUMMARY.md)** - Latest development updates
+
+### iPhone & Mobile
+- **[IPHONE_INTEGRATION.md](docs/IPHONE_INTEGRATION.md)** - Complete iPhone setup with iOS Shortcuts
+
+### Advanced Usage
+- **[TRAINING_DATA_GUIDE.md](docs/TRAINING_DATA_GUIDE.md)** - Organize and process training documents
+- **[OLLAMA_PROMPTS.md](tests/OLLAMA_PROMPTS.md)** - Optimize AI prompts for your content
+- **[README_TESTING.md](tests/README_TESTING.md)** - Testing guide
+
+### Research & Future
+- **[RESEARCH_INTEGRATION_OPPORTUNITIES.md](docs/RESEARCH_INTEGRATION_OPPORTUNITIES.md)** - Latest tools to integrate
+- **[IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - Technical roadmap
 
 ---
 
@@ -397,24 +426,38 @@ tags: [meeting, planning]
 ## 🚧 Roadmap
 
 ### ✅ Phase 1: Foundation (Complete)
-- Core document processing
-- Ollama integration
-- Test suite
-- iPhone web access
+- ✅ Core document processing (16+ formats)
+- ✅ Ollama integration with multiple models
+- ✅ **8-bit retro web interface**
+- ✅ **QR code for instant iPhone access**
+- ✅ **One-command installer**
+- ✅ **Export package system**
+- ✅ Training data infrastructure
 
-### 🔄 Phase 2: Enhancement (In Progress)
-- Full Unstructured integration
-- PaddleOCR (multilingual)
-- Content-type detection
-- Preset system
+### 🔄 Phase 2: Quality Enhancement (In Progress)
+- [ ] **PaddleOCR integration** (better multilingual OCR, especially Afrikaans)
+- [ ] **Full Unstructured integration** (document-specific partitioners)
+- [ ] Prompt optimization based on training data
+- [ ] Content-type detection improvements
 
-### 📅 Phase 3: Advanced (Planned)
-- Native iOS app
-- Tailscale integration
-- Desktop GUI (Tauri)
-- Plugin ecosystem
+### 📅 Phase 3: Workflow Automation (Planned)
+- [ ] **Inbox Watcher** - Auto-process files added to shared folder
+  - Monitor Apple shared drive folder
+  - Automatic queue when files appear
+  - Process and move to Obsidian vault
+  - iPhone → Shared folder → Auto-convert → Obsidian
+- [ ] Batch processing improvements
+- [ ] Background processing service
+- [ ] Notification system
 
-See [PRODUCT_ROADMAP.md](docs/PRODUCT_ROADMAP.md) for details.
+### 🎯 Phase 4: Advanced (Future)
+- [ ] Native iOS app
+- [ ] Tailscale integration for remote access
+- [ ] Desktop GUI (Tauri)
+- [ ] Plugin ecosystem
+- [ ] Multi-user support
+
+See [SESSION_SUMMARY.md](SESSION_SUMMARY.md) for latest development updates.
 
 ---
 
