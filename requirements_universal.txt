@@ -1,0 +1,23 @@
+# mdclean_universal - Requirements
+# Universal document processor for knowledge management
+
+# Core dependencies
+ollama>=0.1.0              # LLM interface
+unstructured[all-docs]>=0.10.0  # Document structure detection
+pytesseract>=0.3.10        # OCR wrapper for Tesseract
+
+# Audio transcription (optional - reuse from mp3_txt)
+vosk>=0.3.45               # Speech recognition
+soundfile>=0.12.1          # Audio file reading
+
+# Image processing (optional, for OCR preprocessing)
+# Pillow>=10.0.0           # Image manipulation (optional)
+# opencv-python>=4.8.0     # Advanced preprocessing (optional)
+
+# System requirements (install separately):
+# - tesseract (brew install tesseract)
+# - ghostscript (brew install ghostscript) - for PDF OCR
+# - poppler (brew install poppler) - for pdftotext
+# - pandoc (brew install pandoc) - for document conversion
+# - ffmpeg (brew install ffmpeg) - for audio conversion
+# - ImageMagick (brew install imagemagick) - for image preprocessing (optional)
