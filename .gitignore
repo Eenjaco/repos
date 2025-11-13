@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
+# Project specific
+*.log
+tmp/
+temp/
+.cache/
+
+# Audio files (optional - remove if you want to track them)
+*.mp3
+*.wav
+*.m4a
+*.flac
+
+# Large model files
+*.onnx
+*.pt
+*.bin
+models/
+
+# API keys and secrets
+.env
+*.key
+secrets.json
+
+# Temporary test outputs
+/tmp/
+test_output/

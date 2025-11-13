@@ -1,0 +1,624 @@
+#!/usr/bin/env bash
+#
+# mdclean v2.0 - Intelligent Academic Document Processor
+#
+# Purpose: Clean markdown from PDF/DOCX conversions with automatic metadata
+#          extraction, Harvard-style naming, and Obsidian frontmatter
+#
+# Usage: mdclean-v2 <original_file> <raw_markdown> [output_file]
+#
+# Features:
+#   - Auto-extract metadata (author, title, year, abstract)
+#   - Generate Harvard-style filenames (surname_name_title.md)
+#   - Create Obsidian frontmatter with rich metadata
+#   - Preserve page markers for citations
+#   - Add citation templates
+#
+# Dependencies: pdfinfo, pdftotext, pandoc (optional)
+#
+# Author: Claude Code + User
+# Date: 2025-11-05
+# Version: 2.0.0
+
+set -euo pipefail
+
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+
+VERSION="2.0.0"
+SCRIPT_NAME="mdclean-v2"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Stop words for title generation (removed from Harvard filenames)
+STOP_WORDS="the|a|an|of|in|on|at|to|for|with|from|by|and|or|but|is|are|was|were"
+
+# ==============================================================================
+# UTILITY FUNCTIONS
+# ==============================================================================
+
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+log_success() {
+    echo -e "${CYAN}[SUCCESS]${NC} $1"
+}
+
+# ==============================================================================
+# SECTION 1: METADATA EXTRACTION
+# ==============================================================================
+
+# Extract PDF metadata using pdfinfo
+extract_pdf_info() {
+    local pdf_file="$1"
+    local info_type="$2"  # Title, Author, CreationDate, etc.
+
+    if ! command -v pdfinfo &> /dev/null; then
+        echo ""
+        return 1
+    fi
+
+    pdfinfo "$pdf_file" 2>/dev/null | grep "^${info_type}:" | sed "s/^${info_type}:[[:space:]]*//" | xargs
+}
+
+# Extract first N pages of text from PDF
+extract_pdf_text() {
+    local pdf_file="$1"
+    local pages="${2:-3}"  # Default: first 3 pages
+
+    if ! command -v pdftotext &> /dev/null; then
+        echo ""
+        return 1
+    fi
+
+    pdftotext -f 1 -l "$pages" -layout "$pdf_file" - 2>/dev/null
+}
+
+# Detect author from PDF
+detect_author() {
+    local original_file="$1"
+    local author=""
+
+    # Method 1: PDF metadata
+    if [[ "$original_file" =~ \.pdf$ ]]; then
+        author=$(extract_pdf_info "$original_file" "Author")
+        if [[ -n "$author" && "$author" != "unknown" ]]; then
+            echo "$author"
+            return 0
+        fi
+
+        # Method 2: Parse first pages for author patterns
+        local text
+        text=$(extract_pdf_text "$original_file" 2)
+
+        # Pattern: "by Author Name"
+        if echo "$text" | grep -i "^by " | head -1 | grep -qE "^by [A-Z][a-z]+ [A-Z]"; then
+            author=$(echo "$text" | grep -i "^by " | head -1 | sed 's/^[Bb]y[[:space:]]*//' | head -1)
+        fi
+
+        # Pattern: Look for name after title before abstract/content
+        if [[ -z "$author" ]]; then
+            # Common pattern: Name appears between title and affiliation/abstract
+            author=$(echo "$text" | grep -E "^[A-Z][a-z]+[[:space:]]+[A-Z][a-z]+" | head -1)
+        fi
+    fi
+
+    # Method 3: DOCX metadata (if pandoc available)
+    if [[ "$original_file" =~ \.docx$ ]] && command -v pandoc &> /dev/null; then
+        local tmptemplate=$(mktemp)
+        echo '$author$' > "$tmptemplate"
+        author=$(pandoc "$original_file" --from=docx --to=plain --template="$tmptemplate" 2>/dev/null | xargs)
+        rm -f "$tmptemplate"
+    fi
+
+    # Clean and return
+    author=$(echo "$author" | sed 's/[0-9]//g' | xargs)
+    echo "$author"
+}
+
+# Detect title from PDF/DOCX
+detect_title() {
+    local original_file="$1"
+    local title=""
+
+    # Method 1: PDF metadata
+    if [[ "$original_file" =~ \.pdf$ ]]; then
+        title=$(extract_pdf_info "$original_file" "Title")
+
+        # If title is truncated or missing, try text extraction
+        if [[ -z "$title" || ${#title} -lt 10 ]]; then
+            local text
+            text=$(extract_pdf_text "$original_file" 1)
+
+            # Look for first substantial title-like line (mixed case, >15 chars, <150 chars)
+            title=$(echo "$text" | grep -E "^[A-Z][a-zA-Z :&-]+" | grep -v "^by\|^Abstract\|^ABSTRACT\|^Keywords" | head -1 | xargs)
+        fi
+    fi
+
+    # Method 2: DOCX metadata
+    if [[ "$original_file" =~ \.docx$ ]] && command -v pandoc &> /dev/null; then
+        local tmptemplate=$(mktemp)
+        echo '$title$' > "$tmptemplate"
+        title=$(pandoc "$original_file" --from=docx --to=plain --template="$tmptemplate" 2>/dev/null | xargs)
+        rm -f "$tmptemplate"
+    fi
+
+    # Clean title
+    title=$(echo "$title" | sed 's/[[:space:]]*$//' | head -1)
+
+    # Fallback: use filename
+    if [[ -z "$title" || ${#title} -lt 5 ]]; then
+        title=$(basename "$original_file" | sed 's/\.[^.]*$//' | tr '_' ' ')
+    fi
+
+    echo "$title"
+}
+
+# Detect year from PDF
+detect_year() {
+    local original_file="$1"
+    local year=""
+
+    if [[ "$original_file" =~ \.pdf$ ]]; then
+        # Method 1: Creation date from metadata
+        local creation_date
+        creation_date=$(extract_pdf_info "$original_file" "CreationDate")
+
+        if [[ "$creation_date" =~ ([0-9]{4}) ]]; then
+            year="${BASH_REMATCH[1]}"
+        fi
+
+        # Method 2: Parse text for copyright/published year
+        if [[ -z "$year" ]]; then
+            local text
+            text=$(extract_pdf_text "$original_file" 2)
+
+            # Look for patterns: "2023", "Published 2023", "Copyright © 2023", "(2023)"
+            if echo "$text" | grep -qoE "(Copyright|©|Published|published|\()\s*([0-9]{4})"; then
+                year=$(echo "$text" | grep -oE "(Copyright|©|Published|published|\()\s*([0-9]{4})" | grep -oE "[0-9]{4}" | head -1)
+            fi
+        fi
+    fi
+
+    # Fallback: current year
+    if [[ -z "$year" ]]; then
+        year=$(date +%Y)
+    fi
+
+    echo "$year"
+}
+
+# Extract abstract/description
+extract_abstract() {
+    local original_file="$1"
+    local raw_md_file="$2"
+    local abstract=""
+
+    # Method 1: Look for Abstract section in PDF text
+    if [[ "$original_file" =~ \.pdf$ ]]; then
+        local text
+        text=$(extract_pdf_text "$original_file" 3)
+
+        # Extract text between "Abstract" and next section
+        abstract=$(echo "$text" | sed -n '/^ABSTRACT\|^Abstract/,/^[A-Z][A-Z]/p' | tail -n +2 | head -20 | grep -v "^$" | head -5 | tr '\n' ' ')
+    fi
+
+    # Method 2: Extract first substantial paragraph from cleaned markdown
+    if [[ -z "$abstract" && -f "$raw_md_file" ]]; then
+        abstract=$(grep -v "^#\|^>\|^<!--\|^$\|^---" "$raw_md_file" | grep -E ".{100,}" | head -3 | tr '\n' ' ')
+    fi
+
+    # Clean and limit length
+    abstract=$(echo "$abstract" | xargs | cut -c 1-400)
+
+    echo "$abstract"
+}
+
+# Detect document type
+detect_type() {
+    local title="$1"
+    local text="$2"
+
+    if echo "$text" | grep -qi "journal\|ISSN"; then
+        echo "article"
+    elif echo "$title" | grep -qi "chapter"; then
+        echo "chapter"
+    elif echo "$text" | grep -qi "proceedings\|conference"; then
+        echo "paper"
+    else
+        echo "book"
+    fi
+}
+
+# ==============================================================================
+# SECTION 2: HARVARD NAMING ENGINE
+# ==============================================================================
+
+# Extract surname from author name
+extract_surname() {
+    local author="$1"
+    local surname=""
+
+    # Handle formats: "FirstName LastName", "LastName, FirstName", "F. LastName"
+    if [[ "$author" =~ ,\  ]]; then
+        # Format: "LastName, FirstName"
+        surname=$(echo "$author" | cut -d',' -f1 | xargs)
+    else
+        # Format: "FirstName LastName" - take last word
+        surname=$(echo "$author" | awk '{print $NF}')
+    fi
+
+    echo "$surname" | tr '[:upper:]' '[:lower:]'
+}
+
+# Extract first name from author
+extract_firstname() {
+    local author="$1"
+    local firstname=""
+
+    if [[ "$author" =~ ,\  ]]; then
+        # Format: "LastName, FirstName"
+        firstname=$(echo "$author" | cut -d',' -f2 | awk '{print $1}' | xargs)
+    else
+        # Format: "FirstName LastName"
+        firstname=$(echo "$author" | awk '{print $1}')
+    fi
+
+    echo "$firstname" | tr '[:upper:]' '[:lower:]'
+}
+
+# Generate Harvard-style filename
+generate_harvard_filename() {
+    local author="$1"
+    local title="$2"
+    local year="$3"
+    local output_dir="$4"
+
+    local surname=$(extract_surname "$author")
+    local firstname=$(extract_firstname "$author")
+
+    # Clean title
+    local title_clean=$(echo "$title" | tr '[:upper:]' '[:lower:]')
+    title_clean=$(echo "$title_clean" | sed 's/ the / /g; s/ a / /g; s/ an / /g; s/ of / /g')
+    title_clean=$(echo "$title_clean" | sed 's/[^a-z0-9 ]//g' | tr -s ' ' | xargs)
+
+    # Take first 5 words
+    local title_words=$(echo "$title_clean" | tr ' ' '\n' | head -5 | tr '\n' '_' | sed 's/_$//')
+
+    # Build filename
+    local base_filename
+    if [[ -n "$firstname" ]]; then
+        base_filename="${surname}_${firstname}_${title_words}"
+    else
+        base_filename="${surname}_${title_words}"
+    fi
+
+    # Limit length
+    if [[ ${#base_filename} -gt 60 ]]; then
+        base_filename=$(echo "${base_filename:0:60}" | sed 's/_[^_]*$//')
+    fi
+
+    local filename="${base_filename}.md"
+
+    # Handle collisions
+    local counter=1
+    while [[ -f "${output_dir}/${filename}" ]]; do
+        if [[ $counter -eq 1 ]]; then
+            filename="${base_filename}_${year}.md"
+        else
+            filename="${base_filename}_${counter}.md"
+        fi
+        counter=$((counter + 1))
+    done
+
+    echo "$filename"
+}
+
+# ==============================================================================
+# SECTION 3: CLEANING ENGINE
+# ==============================================================================
+
+# Clean markdown: remove excessive blanks, fix paragraphs
+clean_markdown_content() {
+    local input_file="$1"
+    local temp_file=$(mktemp)
+
+    # Remove excessive blank lines (more than 2 consecutive)
+    awk 'NF {p=1} p' "$input_file" | awk 'BEGIN{bl=0} /^$/{bl++; if(bl<=1) print; next} {bl=0; print}' > "$temp_file"
+
+    # Join paragraph lines (lines that don't start with #, >, -, *, or <!--)
+    awk '
+    BEGIN { para="" }
+    /^$/ {
+        if (para != "") { print para; para="" }
+        print
+        next
+    }
+    /^#|^>|^-|^\*|^[0-9]+\.|^<!--/ {
+        if (para != "") { print para; para="" }
+        print
+        next
+    }
+    {
+        if (para == "") para = $0
+        else para = para " " $0
+    }
+    END { if (para != "") print para }
+    ' "$temp_file"
+
+    rm "$temp_file"
+}
+
+# Preserve page markers from raw markdown
+preserve_page_markers() {
+    local input_file="$1"
+    grep "<!-- Page [0-9]\\+ -->" "$input_file" 2>/dev/null || true
+}
+
+# Get page range from markers
+get_page_range() {
+    local input_file="$1"
+    local first_page
+    local last_page
+
+    first_page=$(grep -o "<!-- Page [0-9]\\+ -->" "$input_file" | head -1 | grep -o "[0-9]\\+")
+    last_page=$(grep -o "<!-- Page [0-9]\\+ -->" "$input_file" | tail -1 | grep -o "[0-9]\\+")
+
+    if [[ -n "$first_page" && -n "$last_page" ]]; then
+        echo "${first_page}-${last_page}"
+    else
+        echo ""
+    fi
+}
+
+# ==============================================================================
+# SECTION 4: FRONTMATTER GENERATOR
+# ==============================================================================
+
+# Generate Obsidian frontmatter
+generate_frontmatter() {
+    local title="$1"
+    local author="$2"
+    local year="$3"
+    local doc_type="$4"
+    local pages="$5"
+    local abstract="$6"
+    local source="$7"
+
+    local today
+    today=$(date +%Y-%m-%d)
+
+    # Format author as wikilink
+    local author_formatted
+    if [[ -n "$author" ]]; then
+        # Convert "FirstName LastName" to "[[LastName, FirstName]]"
+        local surname firstname
+        surname=$(extract_surname "$author")
+        firstname=$(extract_firstname "$author")
+        surname=$(echo "$surname" | sed 's/\b\(.\)/\U\1/g')  # Capitalize
+        firstname=$(echo "$firstname" | sed 's/\b\(.\)/\U\1/g')
+        author_formatted="[[$surname, $firstname]]"
+    else
+        author_formatted="[[Unknown]]"
+    fi
+
+    # Auto-generate tags
+    local tags="reference"
+    if [[ -n "$source" ]]; then
+        tags="${tags}, clipping"
+    fi
+
+    # Build YAML frontmatter
+    cat << EOF
+---
+title: "$title"
+author:
+  - "$author_formatted"
+year: $year
+source: "$source"
+type: "$doc_type"
+pages: "$pages"
+created: $today
+description: |
+  $abstract
+tags:
+  - "$tags"
+---
+EOF
+}
+
+# Generate citation template
+generate_citation() {
+    local author="$1"
+    local year="$2"
+    local title="$3"
+
+    local surname
+    surname=$(extract_surname "$author")
+    surname=$(echo "$surname" | sed 's/\b\(.\)/\U\1/g')  # Capitalize first letter
+
+    local firstname_initial
+    firstname_initial=$(extract_firstname "$author" | cut -c1 | tr '[:lower:]' '[:upper:]')
+
+    cat << EOF
+
+---
+
+## Citation
+
+**Harvard Format:**
+$surname, ${firstname_initial}. ($year). *$title*.
+
+**In-text citation:**
+($surname, $year, p. XX)
+
+**Page markers preserved:** Use Ctrl+F or Cmd+F to search \`<!-- Page\` to navigate to specific pages.
+EOF
+}
+
+# ==============================================================================
+# SECTION 5: MAIN PROCESSING
+# ==============================================================================
+
+process_document() {
+    local original_file="$1"
+    local raw_md_file="$2"
+    local output_file="$3"
+
+    log_info "Processing: $(basename "$original_file")"
+    echo ""
+
+    # Validate inputs
+    if [[ ! -f "$original_file" ]]; then
+        log_error "Original file not found: $original_file"
+        return 1
+    fi
+
+    if [[ ! -f "$raw_md_file" ]]; then
+        log_error "Raw markdown file not found: $raw_md_file"
+        return 1
+    fi
+
+    # Extract metadata
+    log_info "Extracting metadata..."
+    local author title year abstract doc_type pages
+
+    author=$(detect_author "$original_file")
+    title=$(detect_title "$original_file")
+    year=$(detect_year "$original_file")
+    abstract=$(extract_abstract "$original_file" "$raw_md_file")
+    pages=$(get_page_range "$raw_md_file")
+
+    # Detect document type
+    local pdf_text
+    pdf_text=$(extract_pdf_text "$original_file" 2)
+    doc_type=$(detect_type "$title" "$pdf_text")
+
+    # Display extracted metadata
+    echo -e "${CYAN}Metadata Extracted:${NC}"
+    echo "  Author: ${author:-unknown}"
+    echo "  Title:  $title"
+    echo "  Year:   $year"
+    echo "  Type:   $doc_type"
+    echo "  Pages:  ${pages:-unknown}"
+    echo ""
+
+    # Generate Harvard filename if not specified
+    if [[ -z "$output_file" || "$output_file" == "-" ]]; then
+        local output_dir
+        output_dir=$(dirname "$raw_md_file")
+
+        if [[ -n "$author" ]]; then
+            output_file="${output_dir}/$(generate_harvard_filename "$author" "$title" "$year" "$output_dir")"
+            log_info "Generated filename: $(basename "$output_file")"
+        else
+            log_warn "No author detected, using title-based filename"
+            local safe_title
+            safe_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g' | cut -c1-40)
+            output_file="${output_dir}/${safe_title}.md"
+        fi
+    fi
+
+    # Generate frontmatter
+    local frontmatter
+    frontmatter=$(generate_frontmatter "$title" "$author" "$year" "$doc_type" "$pages" "$abstract" "")
+
+    # Clean markdown content
+    log_info "Cleaning markdown..."
+    local cleaned_content temp_clean
+    temp_clean=$(mktemp)
+
+    # Remove existing frontmatter and conversion header if present
+    sed '/^---$/,/^---$/d' "$raw_md_file" | sed '/^> Converted from/d' > "$temp_clean"
+
+    cleaned_content=$(clean_markdown_content "$temp_clean")
+    rm "$temp_clean"
+
+    # Generate citation
+    local citation
+    citation=$(generate_citation "$author" "$year" "$title")
+
+    # Assemble final document
+    {
+        echo "$frontmatter"
+        echo ""
+        echo "$cleaned_content"
+        echo "$citation"
+    } > "$output_file"
+
+    log_success "Created: $output_file"
+    echo ""
+
+    return 0
+}
+
+# ==============================================================================
+# MAIN ENTRY POINT
+# ==============================================================================
+
+usage() {
+    cat << EOF
+${CYAN}mdclean v${VERSION} - Intelligent Academic Document Processor${NC}
+
+Usage: $SCRIPT_NAME <original_file> <raw_markdown> [output_file]
+
+Arguments:
+  original_file   Source PDF/DOCX file (for metadata extraction)
+  raw_markdown    Raw markdown file from mdcon
+  output_file     Output filename (optional, generates Harvard-style name if omitted)
+
+Features:
+  ✓ Automatic metadata extraction (author, title, year, abstract)
+  ✓ Harvard-style filename generation (surname_firstname_title.md)
+  ✓ Obsidian-compatible frontmatter with rich metadata
+  ✓ Page marker preservation for citations
+  ✓ Citation template generation
+
+Examples:
+  $SCRIPT_NAME paper.pdf paper-raw.md
+  $SCRIPT_NAME book.pdf book-raw.md custom_name.md
+
+Dependencies:
+  Required: pdfinfo, pdftotext
+  Optional: pandoc (for DOCX support)
+
+EOF
+    exit 0
+}
+
+main() {
+    # Parse arguments
+    if [[ $# -lt 2 ]]; then
+        usage
+    fi
+
+    local original_file="$1"
+    local raw_md_file="$2"
+    local output_file="${3:-}"
+
+    # Process document
+    if process_document "$original_file" "$raw_md_file" "$output_file"; then
+        exit 0
+    else
+        exit 1
+    fi
+}
+
+# Run main
+main "$@"

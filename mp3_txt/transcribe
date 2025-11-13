@@ -1,0 +1,384 @@
+#!/usr/bin/env bash
+#
+# transcribe - Interactive audio transcription CLI
+#
+# Single command interface for transcribing audio files to markdown
+#
+
+set -euo pipefail
+
+# Get the directory where this script is located (resolve symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$SCRIPT_DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+# Activate virtual environment
+if [[ -f "$SCRIPT_DIR/venv/bin/activate" ]]; then
+    source "$SCRIPT_DIR/venv/bin/activate"
+fi
+
+# Colors for output
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${BOLD}=========================================${NC}"
+echo -e "${BOLD}Audio Transcription (Vosk)${NC}"
+echo -e "${BOLD}=========================================${NC}"
+echo ""
+echo "Model Selection:"
+echo "  1) Small model (40MB, 85% accuracy, faster)"
+echo "  2) Large model (1.8GB, 92% accuracy, slower)"
+echo ""
+read -p "Choose model (1-2, default: 2): " model_choice
+model_choice="${model_choice:-2}"
+
+if [[ "$model_choice" == "1" ]]; then
+    model_path="$HOME/.cache/vosk-model-small-en-us-0.15"
+    echo -e "${GREEN}✅ Using small model (fast)${NC}"
+else
+    model_path="$HOME/.cache/vosk-model-en-us-0.22"
+    echo -e "${GREEN}✅ Using large model (high quality)${NC}"
+fi
+
+echo ""
+echo "Transcription Mode:"
+echo "  1) Single file (drag-and-drop or paste path)"
+echo "  2) Batch folder (multiple files)"
+echo "  3) Exit"
+echo ""
+read -p "Choose option (1-3): " choice
+
+case "$choice" in
+    1)
+        # ===== SINGLE FILE MODE =====
+        echo ""
+        echo -e "${BLUE}Drag and drop your audio file here (or paste the path):${NC}"
+        read -r file_path
+
+        # Clean the path
+        file_path=$(echo "$file_path" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        file_path="${file_path//\'/}"
+        file_path="${file_path//\"/}"
+        file_path=$(echo "$file_path" | tr -s ' ')
+        file_path=$(echo "$file_path" | tr -d '\n\r')
+
+        # Check if file exists
+        if [[ ! -f "$file_path" ]]; then
+            echo -e "${YELLOW}❌ Error: File not found at: $file_path${NC}"
+            exit 1
+        fi
+
+        filename=$(basename "$file_path")
+        echo ""
+        echo -e "${GREEN}✅ File found: $filename${NC}"
+
+        # Ask about timestamps
+        echo ""
+        read -p "Include timestamps? (y/n, default: n): " include_ts
+        include_ts="${include_ts:-n}"
+        ts_flag=""
+        if [[ "$include_ts" == "y" || "$include_ts" == "Y" ]]; then
+            ts_flag="--timestamps"
+        fi
+
+        # Output location
+        echo ""
+        echo "Output location:"
+        echo "  1) Current directory (./transcriptions)"
+        echo "  2) Inbox (/Users/mac/Documents/Local Vault/Inbox)"
+        echo "  3) Custom path"
+        echo ""
+        read -p "Choose location (1-3, default: 1): " loc_choice
+        loc_choice="${loc_choice:-1}"
+
+        case "$loc_choice" in
+            1)
+                outdir="./transcriptions"
+                ;;
+            2)
+                outdir="/Users/mac/Documents/Local Vault/Inbox"
+                ;;
+            3)
+                echo ""
+                read -p "Enter custom path (or drag-and-drop): " custom_path
+                custom_path=$(echo "$custom_path" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                custom_path="${custom_path//\'/}"
+                custom_path="${custom_path//\"/}"
+                custom_path=$(echo "$custom_path" | tr -d '\n\r')
+
+                if [[ -d "$custom_path" ]]; then
+                    outdir="$custom_path"
+                else
+                    echo -e "${YELLOW}⚠️  Directory not found, using ./transcriptions${NC}"
+                    outdir="./transcriptions"
+                fi
+                ;;
+        esac
+
+        echo -e "${GREEN}✅ Output: $outdir${NC}"
+
+        # Transcribe
+        echo ""
+        echo -e "${BLUE}Transcribing...${NC}"
+        python3 "$SCRIPT_DIR/transcribe_vosk_stream.py" single "$file_path" --outdir "$outdir" --model "$model_path" $ts_flag
+
+        # Get the output file name
+        file_stem=$(basename "$file_path" .mp3)
+        output_file="$outdir/${file_stem}.md"
+
+        # Post-transcription options
+        echo ""
+        echo -e "${GREEN}✅ Transcription complete!${NC}"
+        echo ""
+        echo "Post-transcription options:"
+        echo "  1) Rename output file"
+        echo "  2) Move to different folder"
+        echo "  3) Done (keep in $outdir)"
+        echo ""
+        read -p "Choose option (1-3, default: 3): " post_choice
+        post_choice="${post_choice:-3}"
+
+        case "$post_choice" in
+            1)
+                # Rename file
+                echo ""
+                echo "Current name: ${file_stem}.md"
+                echo ""
+                echo "Examples:"
+                echo "  - christine_pohl_living_into_community_ch_1"
+                echo "  - sermon_2025_11_10_john_smith"
+                echo ""
+                read -p "New name (without .md): " new_name
+                if [[ -n "$new_name" ]]; then
+                    mv "$output_file" "$outdir/${new_name}.md"
+                    output_file="$outdir/${new_name}.md"
+                    echo -e "${GREEN}✅ Renamed to: ${new_name}.md${NC}"
+                fi
+
+                # Ask about moving
+                echo ""
+                read -p "Move to different folder? (y/n): " move_it
+                if [[ "$move_it" == "y" || "$move_it" == "Y" ]]; then
+                    echo ""
+                    read -p "Destination folder (or drag-and-drop): " dest_folder
+                    dest_folder=$(echo "$dest_folder" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    dest_folder="${dest_folder//\'/}"
+                    dest_folder="${dest_folder//\"/}"
+
+                    if [[ -d "$dest_folder" ]]; then
+                        mv "$output_file" "$dest_folder/"
+                        echo -e "${GREEN}✅ Moved to: $dest_folder/${NC}"
+                    else
+                        echo -e "${YELLOW}❌ Destination not found, keeping in $outdir${NC}"
+                    fi
+                fi
+                ;;
+
+            2)
+                # Move file
+                echo ""
+                read -p "Destination folder (or drag-and-drop): " dest_folder
+                dest_folder=$(echo "$dest_folder" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                dest_folder="${dest_folder//\'/}"
+                dest_folder="${dest_folder//\"/}"
+
+                if [[ -d "$dest_folder" ]]; then
+                    mv "$output_file" "$dest_folder/"
+                    echo -e "${GREEN}✅ Moved to: $dest_folder/${NC}"
+                else
+                    echo -e "${YELLOW}❌ Destination not found, keeping in $outdir${NC}"
+                fi
+                ;;
+
+            3)
+                echo ""
+                echo -e "${GREEN}File saved: $output_file${NC}"
+                ;;
+        esac
+        ;;
+
+    2)
+        # ===== BATCH MODE =====
+        echo ""
+        echo -e "${BLUE}Drag and drop the folder containing audio files:${NC}"
+        read -r folder_path
+
+        # Clean the path
+        folder_path=$(echo "$folder_path" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        folder_path="${folder_path//\'/}"
+        folder_path="${folder_path//\"/}"
+        folder_path=$(echo "$folder_path" | tr -s ' ')
+        folder_path=$(echo "$folder_path" | tr -d '\n\r')
+
+        # Check if directory exists
+        if [[ ! -d "$folder_path" ]]; then
+            echo -e "${YELLOW}❌ Error: Directory not found at: $folder_path${NC}"
+            exit 1
+        fi
+
+        # Count MP3 files
+        mp3_count=$(find "$folder_path" -maxdepth 1 -name "*.mp3" -type f | wc -l | tr -d ' ')
+        echo ""
+        echo -e "${GREEN}✅ Found $mp3_count MP3 files${NC}"
+
+        if [[ "$mp3_count" -eq 0 ]]; then
+            echo -e "${YELLOW}❌ No MP3 files found in this directory${NC}"
+            exit 1
+        fi
+
+        # Ask about timestamps
+        echo ""
+        read -p "Include timestamps? (y/n, default: n): " include_ts
+        include_ts="${include_ts:-n}"
+        ts_flag=""
+        if [[ "$include_ts" == "y" || "$include_ts" == "Y" ]]; then
+            ts_flag="--timestamps"
+        fi
+
+        # Output location
+        echo ""
+        echo "Output location:"
+        echo "  1) Current directory (./transcriptions)"
+        echo "  2) Inbox (/Users/mac/Documents/Local Vault/Inbox)"
+        echo "  3) Custom path"
+        echo ""
+        read -p "Choose location (1-3, default: 1): " loc_choice
+        loc_choice="${loc_choice:-1}"
+
+        case "$loc_choice" in
+            1)
+                outdir="./transcriptions"
+                ;;
+            2)
+                outdir="/Users/mac/Documents/Local Vault/Inbox"
+                ;;
+            3)
+                echo ""
+                read -p "Enter custom path (or drag-and-drop): " custom_path
+                custom_path=$(echo "$custom_path" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                custom_path="${custom_path//\'/}"
+                custom_path="${custom_path//\"/}"
+                custom_path=$(echo "$custom_path" | tr -d '\n\r')
+
+                if [[ -d "$custom_path" ]]; then
+                    outdir="$custom_path"
+                else
+                    echo -e "${YELLOW}⚠️  Directory not found, using ./transcriptions${NC}"
+                    outdir="./transcriptions"
+                fi
+                ;;
+        esac
+
+        echo -e "${GREEN}✅ Output: $outdir${NC}"
+
+        # Concurrency
+        echo ""
+        read -p "Concurrency (1=safe for 8GB RAM, default: 1): " concurrency
+        concurrency="${concurrency:-1}"
+
+        # Transcribe
+        echo ""
+        echo -e "${BLUE}Transcribing $mp3_count files...${NC}"
+        python3 "$SCRIPT_DIR/transcribe_vosk_stream.py" batch "$folder_path" --outdir "$outdir" --concurrency "$concurrency" --model "$model_path" $ts_flag
+
+        # Post-transcription options
+        echo ""
+        echo -e "${GREEN}✅ All files transcribed!${NC}"
+        echo ""
+        echo "Post-transcription options:"
+        echo "  1) Rename all files with common prefix"
+        echo "  2) Move all files to different folder"
+        echo "  3) Done (keep in $outdir)"
+        echo ""
+        read -p "Choose option (1-3, default: 3): " post_choice
+        post_choice="${post_choice:-3}"
+
+        case "$post_choice" in
+            1)
+                # Rename all files with common prefix
+                echo ""
+                echo "Examples:"
+                echo "  - christine_pohl_living_into_community"
+                echo "  - sermon_series_2025"
+                echo ""
+                echo "Files will be renamed as: prefix_ch_1.md, prefix_ch_2.md, etc."
+                echo ""
+                read -p "Common prefix (or leave blank to skip): " prefix
+
+                if [[ -n "$prefix" ]]; then
+                    counter=1
+                    for file in "$outdir"/*.md; do
+                        if [[ -f "$file" ]]; then
+                            new_name="${prefix}_ch_${counter}.md"
+                            mv "$file" "$outdir/$new_name"
+                            echo "  Renamed: $(basename "$file") → $new_name"
+                            ((counter++))
+                        fi
+                    done
+                    echo -e "${GREEN}✅ Renamed $((counter-1)) files${NC}"
+                fi
+
+                # Ask about moving
+                echo ""
+                read -p "Move all files to different folder? (y/n): " move_it
+                if [[ "$move_it" == "y" || "$move_it" == "Y" ]]; then
+                    echo ""
+                    read -p "Destination folder (or drag-and-drop): " dest_folder
+                    dest_folder=$(echo "$dest_folder" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    dest_folder="${dest_folder//\'/}"
+                    dest_folder="${dest_folder//\"/}"
+
+                    if [[ -d "$dest_folder" ]]; then
+                        mv "$outdir"/*.md "$dest_folder/"
+                        echo -e "${GREEN}✅ Moved all files to: $dest_folder/${NC}"
+                    else
+                        echo -e "${YELLOW}❌ Destination not found, keeping in $outdir${NC}"
+                    fi
+                fi
+                ;;
+
+            2)
+                # Move all files
+                echo ""
+                read -p "Destination folder (or drag-and-drop): " dest_folder
+                dest_folder=$(echo "$dest_folder" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                dest_folder="${dest_folder//\'/}"
+                dest_folder="${dest_folder//\"/}"
+
+                if [[ -d "$dest_folder" ]]; then
+                    mv "$outdir"/*.md "$dest_folder/"
+                    echo -e "${GREEN}✅ Moved all files to: $dest_folder/${NC}"
+                else
+                    echo -e "${YELLOW}❌ Destination not found, keeping in $outdir${NC}"
+                fi
+                ;;
+
+            3)
+                echo ""
+                echo -e "${GREEN}Files saved in: $outdir${NC}"
+                ;;
+        esac
+        ;;
+
+    3)
+        echo "Exiting..."
+        exit 0
+        ;;
+
+    *)
+        echo -e "${YELLOW}❌ Invalid option${NC}"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo -e "${BOLD}=========================================${NC}"
+echo -e "${GREEN}✅ Done!${NC}"
+echo -e "${BOLD}=========================================${NC}"

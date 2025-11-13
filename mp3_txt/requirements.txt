@@ -1,0 +1,4 @@
+vosk>=0.3.44
+soundfile>=0.13.1
+typer[all]>=0.20.0
+rich>=14.2.0

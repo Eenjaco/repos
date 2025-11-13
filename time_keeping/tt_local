@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# tt-local: tiny start/stop helper that appends to weekly .md files (ISO week)
+# Usage:
+#   tt-local s
+#   tt-local e
+
+ACTION="$1"                # s or e
+
+# Local location in Time Keeping project
+BASE_DIR="/Users/mac/Documents/Local Vault/Projects/Time Keeping/time_logs"
+mkdir -p "$BASE_DIR"
+
+# Get ISO week number
+get_week_number() {
+  date -u +%V
+}
+
+# Get year
+get_year() {
+  date -u +%Y
+}
+
+# Generate filename: 2025_W45_time.md
+WEEK_NUM=$(get_week_number)
+YEAR=$(get_year)
+WEEK_FILE="$BASE_DIR/${YEAR}_W${WEEK_NUM}_time.md"
+STATE_FILE="$BASE_DIR/.tt_local_state"
+
+timestamp(){ date +"%d %b %Y at %H:%M:%S"; }
+
+start_cmd(){
+  if [ -f "$STATE_FILE" ]; then
+    echo "A timer is already running. Stop it first with: tt-local e"
+    exit 1
+  fi
+  read -r -p "Title: " TITLE
+  read -r -p "Subtitle (optional): " SUB
+  START="$(timestamp)"
+  printf "%s\n%s\n%s\n" "$TITLE" "$SUB" "$START" > "$STATE_FILE"
+  echo "Started: $TITLE — $START"
+}
+
+end_cmd(){
+  if [ ! -f "$STATE_FILE" ]; then
+    echo "No running timer found."
+    exit 1
+  fi
+  {
+    read -r TITLE
+    read -r SUB
+    read -r START
+  } < "$STATE_FILE"
+  END="$(timestamp)"
+  {
+    echo "———"
+    echo "$TITLE"
+    [ -n "$SUB" ] && echo "$SUB"
+    echo "Start time: $START"
+    echo "until"
+    echo "End Time: $END"
+    echo ""
+  } >> "$WEEK_FILE"
+  rm -f "$STATE_FILE"
+  echo "Stopped: $TITLE — $END"
+  echo "Appended to: $WEEK_FILE"
+}
+
+case "$ACTION" in
+  s) start_cmd ;;
+  e) end_cmd ;;
+  *) echo "Usage: $0 s|e" ; exit 1 ;;
+esac

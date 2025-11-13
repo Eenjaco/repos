@@ -1,0 +1,758 @@
+#!/usr/bin/env bash
+# mdclean - Intelligent Markdown post-processor
+# Cleans and structures markdown using original file context
+#
+# Usage: mdclean original_file raw.md [output.md]
+
+set -eo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Cleaning log
+CLEANING_LOG=""
+
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+log_to_file() {
+    CLEANING_LOG="${CLEANING_LOG}$1"$'\n'
+}
+
+# Show usage
+usage() {
+    cat << EOF
+${CYAN}mdclean - Intelligent Markdown Cleaner${NC}
+
+Uses original file structure to intelligently clean raw markdown:
+  ✓ Extracts heading hierarchy from original
+  ✓ Detects lists, tables, and formatting
+  ✓ Fixes spacing and paragraph breaks
+  ✓ Removes page markers and artifacts
+  ✓ Preserves document structure
+
+Usage:
+  mdclean original.pdf raw.md              # Creates clean.md
+  mdclean original.docx raw.md output.md   # Custom output
+  mdclean --auto folder/                   # Batch: all *-raw.md files
+
+Supported original formats: PDF, DOCX, EPUB, HTML
+
+Options:
+  -h, --help          Show this help
+  --auto FOLDER       Auto-process all *-raw.md files in folder
+  -k, --keep-pages    Keep page markers (<!-- Page NNN -->)
+
+Examples:
+  mdclean book.pdf book-raw.md           # → book.md
+  mdclean paper.docx paper-raw.md        # → paper.md
+  mdclean --auto ~/Documents/conversions/  # Batch clean
+
+EOF
+    exit 0
+}
+
+# Extract structure from DOCX
+extract_docx_structure() {
+    local docx_file="$1"
+    local struct_file="$2"
+
+    # Use pandoc to extract with native format to see structure
+    if command -v pandoc &> /dev/null; then
+        # Convert to markdown preserving heading levels
+        pandoc "$docx_file" -f docx -t markdown --wrap=none --standalone 2>/dev/null | \
+        grep -E "^#{1,6} " | \
+        sed 's/^#* //' > "$struct_file" 2>/dev/null || touch "$struct_file"
+
+        local heading_count=$(wc -l < "$struct_file" | tr -d ' ')
+        log_to_file "STRUCTURE: Extracted $heading_count headings from DOCX"
+        return 0
+    fi
+
+    touch "$struct_file"
+    log_to_file "STRUCTURE: pandoc not available for DOCX analysis"
+    return 1
+}
+
+# Extract structure from EPUB
+extract_epub_structure() {
+    local epub_file="$1"
+    local struct_file="$2"
+
+    # EPUB files have built-in structure via HTML
+    if command -v pandoc &> /dev/null; then
+        pandoc "$epub_file" -f epub -t markdown --wrap=none 2>/dev/null | \
+        grep -E "^#{1,6} " | \
+        sed 's/^#* //' > "$struct_file" 2>/dev/null || touch "$struct_file"
+
+        local heading_count=$(wc -l < "$struct_file" | tr -d ' ')
+        log_to_file "STRUCTURE: Extracted $heading_count headings from EPUB"
+        return 0
+    fi
+
+    touch "$struct_file"
+    log_to_file "STRUCTURE: pandoc not available for EPUB analysis"
+    return 1
+}
+
+# Extract structure from HTML
+extract_html_structure() {
+    local html_file="$1"
+    local struct_file="$2"
+
+    # Extract heading tags
+    if command -v pandoc &> /dev/null; then
+        pandoc "$html_file" -f html -t markdown --wrap=none 2>/dev/null | \
+        grep -E "^#{1,6} " | \
+        sed 's/^#* //' > "$struct_file" 2>/dev/null || touch "$struct_file"
+
+        local heading_count=$(wc -l < "$struct_file" | tr -d ' ')
+        log_to_file "STRUCTURE: Extracted $heading_count headings from HTML"
+        return 0
+    fi
+
+    touch "$struct_file"
+    log_to_file "STRUCTURE: pandoc not available for HTML analysis"
+    return 1
+}
+
+# Extract structure from PDF (heuristic-based)
+extract_pdf_structure() {
+    local pdf_file="$1"
+    local struct_file="$2"
+
+    # For PDFs, use heuristics:
+    # - Lines in ALL CAPS or Title Case at start of paragraphs
+    # - Shorter lines (potential headings)
+    # - Lines followed by blank space
+
+    if command -v pdftotext &> /dev/null; then
+        pdftotext -layout "$pdf_file" - 2>/dev/null | \
+        awk '
+        BEGIN { prev_blank = 1; heading_count = 0 }
+
+        # Track blank lines
+        /^[[:space:]]*$/ { prev_blank = 1; next }
+
+        # Potential headings: short lines after blank, or ALL CAPS
+        {
+            # Remove leading/trailing whitespace
+            line = $0
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+
+            # Skip very long lines (unlikely to be headings)
+            if (length(line) > 100) {
+                prev_blank = 0
+                next
+            }
+
+            # Check if ALL CAPS (at least 3 words)
+            if (NF >= 3 && line ~ /^[A-Z][A-Z0-9 ]+$/) {
+                print line
+                heading_count++
+            }
+            # Check if Title Case and short (< 80 chars) and after blank
+            else if (prev_blank && length(line) < 80 && NF <= 15 && line ~ /^[A-Z]/) {
+                # Simple heuristic: starts with capital, not too long
+                if (line !~ /^(The|A|An|In|On|At|To|For|Of|And|But|Or) /) {
+                    print line
+                    heading_count++
+                }
+            }
+
+            prev_blank = 0
+        }
+
+        END {
+            if (heading_count > 0) {
+                print "<!-- Detected " heading_count " potential headings -->" > "/dev/stderr"
+            }
+        }
+        ' > "$struct_file" 2>&1
+
+        local heading_count=$(grep -v "^<!--" "$struct_file" | wc -l | tr -d ' ')
+        log_to_file "STRUCTURE: Detected $heading_count potential headings from PDF (heuristic)"
+        return 0
+    fi
+
+    touch "$struct_file"
+    log_to_file "STRUCTURE: pdftotext not available for PDF analysis"
+    return 1
+}
+
+# Main cleaning function with structure awareness
+clean_with_structure() {
+    local original_file="$1"
+    local raw_md="$2"
+    local output_md="$3"
+    local keep_pages="${4:-false}"
+
+    log_info "Analyzing original file structure..."
+
+    # Detect original file type
+    local extension="${original_file##*.}"
+    extension=$(echo "$extension" | tr 'A-Z' 'a-z')
+
+    # Create temp files
+    local temp_struct=$(mktemp)
+    local temp_md=$(mktemp)
+    trap "rm -f '$temp_struct' '$temp_md'" EXIT
+
+    # Extract structure based on file type
+    case "$extension" in
+        pdf)
+            extract_pdf_structure "$original_file" "$temp_struct"
+            ;;
+        docx)
+            extract_docx_structure "$original_file" "$temp_struct"
+            ;;
+        epub)
+            extract_epub_structure "$original_file" "$temp_struct"
+            ;;
+        html|htm)
+            extract_html_structure "$original_file" "$temp_struct"
+            ;;
+        *)
+            log_warn "Unknown file type: .$extension"
+            log_to_file "STRUCTURE: Unknown file type, using basic cleaning"
+            touch "$temp_struct"
+            ;;
+    esac
+
+    # Apply existing cleaning logic first
+    log_info "Applying standard markdown cleaning..."
+    clean_markdown "$raw_md" "$temp_md" "$keep_pages"
+
+    # Now enhance with structure-aware heading detection
+    log_info "Applying structure-aware heading detection..."
+
+    if [[ -s "$temp_struct" ]]; then
+        # We have detected headings - try to match them in the cleaned markdown
+        local matched_headings=0
+
+        # Read each detected heading and try to find it in the markdown
+        while IFS= read -r heading; do
+            # Skip comments and empty lines
+            [[ "$heading" =~ ^\<\!-- ]] && continue
+            [[ -z "$heading" ]] && continue
+
+            # Escape special regex characters
+            local escaped_heading=$(echo "$heading" | sed 's/[.[\*^$()+?{|]/\\&/g')
+
+            # Try to find this heading in the markdown and mark it with ##
+            # Only if it's not already a heading
+            if grep -q "^${escaped_heading}$" "$temp_md" 2>/dev/null; then
+                sed -i.bak "s/^${escaped_heading}$/## ${heading}/g" "$temp_md" 2>/dev/null || true
+                matched_headings=$((matched_headings + 1))
+            fi
+        done < "$temp_struct"
+
+        if [ "$matched_headings" -gt 0 ]; then
+            log_info "Marked $matched_headings detected headings"
+            log_to_file "HEADINGS: Marked $matched_headings headings from structure"
+        else
+            log_to_file "HEADINGS: No structure headings matched in cleaned text"
+        fi
+
+        # Clean up backup files
+        rm -f "${temp_md}".bak*
+    else
+        log_to_file "HEADINGS: No structure detected, used pattern-based detection only"
+    fi
+
+    # Copy final result to output
+    cp "$temp_md" "$output_md"
+
+    log_info "✓ Cleaned: $output_md"
+}
+
+
+# Legacy clean markdown function (for backward compatibility)
+clean_markdown() {
+    local input_file="$1"
+    local output_file="${2:-$input_file}"
+    local keep_pages="${3:-false}"
+
+    if [[ ! -f "$input_file" ]]; then
+        echo "Error: File not found: $input_file"
+        exit 1
+    fi
+
+    log_info "Cleaning: $input_file"
+
+    # Create temp file
+    local temp_file
+    temp_file=$(mktemp)
+
+    # Copy to temp file first
+    cp "$input_file" "$temp_file"
+
+    # Apply cleaning steps one at a time (safer)
+
+    # Fix spacing around headings
+    sed -i.bak 's/^#\([^# ]\)/# \1/g' "$temp_file"
+    sed -i.bak 's/^##\([^# ]\)/## \1/g' "$temp_file"
+    sed -i.bak 's/^###\([^# ]\)/### \1/g' "$temp_file"
+
+    # Fix common OCR spacing issues
+    sed -i.bak 's/ \+/ /g' "$temp_file"
+    sed -i.bak 's/^ \+//g' "$temp_file"
+    sed -i.bak 's/  \+$//g' "$temp_file"
+
+    # Better heading detection - common patterns
+    sed -i.bak 's/^PART [IVX]\+:/## &/g' "$temp_file"
+    sed -i.bak 's/^Part [IVX]\+:/## &/g' "$temp_file"
+    sed -i.bak 's/^\([0-9]\+\)\. /## \1. /g' "$temp_file"  # Numbered sections
+
+    # Fix chapter/section patterns
+    sed -i.bak 's/^CHAPTER \([0-9]\+\)/## Chapter \1/g' "$temp_file"
+    sed -i.bak 's/^Chapter \([0-9]\+\)/## Chapter \1/g' "$temp_file"
+    sed -i.bak 's/^LESSON \([0-9]\+\)/## Lesson \1/g' "$temp_file"
+    sed -i.bak 's/^Lesson \([0-9]\+\)/## Lesson \1/g' "$temp_file"
+    sed -i.bak 's/^SECTION \([0-9]\+\)/## Section \1/g' "$temp_file"
+
+    # Fix common OCR character confusion
+    sed -i.bak 's/\bI\([a-z]\)/l\1/g' "$temp_file"        # I followed by lowercase → l
+    sed -i.bak 's/\([a-z]\)I\b/\1l/g' "$temp_file"        # lowercase followed by I at word end → l
+    sed -i.bak 's/\bIl /Il /g' "$temp_file"               # Il at start → Il (name)
+    sed -i.bak 's/ l / I /g' "$temp_file"                 # standalone l → I
+
+    # Fix hyphenated words at line breaks (medita-tion → meditation)
+    sed -i.bak 's/-$//' "$temp_file"
+
+    # Fix common OCR quote/dash errors
+    sed -i.bak "s/'/'/g" "$temp_file"
+    sed -i.bak 's/"/"/g' "$temp_file"
+    sed -i.bak 's/"/"/g' "$temp_file"
+    sed -i.bak 's/—/---/g' "$temp_file"
+    sed -i.bak 's/–/--/g' "$temp_file"
+
+    # Fix list formatting
+    sed -i.bak 's/^• /- /g' "$temp_file"
+    sed -i.bak 's/^· /- /g' "$temp_file"
+
+    # Remove page markers if requested
+    if [ "$keep_pages" = "false" ]; then
+        sed -i.bak '/^<!-- Page [0-9]\+ -->$/d' "$temp_file"
+    fi
+
+    # PARAGRAPH FORMATTING - Join broken lines within paragraphs
+    log_info "Joining paragraph lines..."
+    awk '
+    BEGIN { para = ""; in_table = 0 }
+
+    # Preserve blank lines (paragraph breaks)
+    /^$/ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print ""
+        in_table = 0
+        next
+    }
+
+    # Preserve headings
+    /^#/ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 0
+        next
+    }
+
+    # Preserve list items
+    /^- / {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 0
+        next
+    }
+
+    # Preserve numbered lists (1. 2. etc)
+    /^[0-9]+\./ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 0
+        next
+    }
+
+    # Preserve page markers
+    /^<!-- Page/ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 0
+        next
+    }
+
+    # Preserve block quotes
+    /^>/ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 0
+        next
+    }
+
+    # Detect table-like lines (short lines, likely column headers or data)
+    # Lines with:
+    # - Only 1-3 words
+    # - All caps
+    # - Roman numerals
+    # - Page numbers (i, ii, iii, iv, v, vi, etc or actual numbers)
+    # - Contains "Table" or "Contents" or "Page"
+    /^(i+|iv|v|vi|vii|viii|ix|x|xi|xii)$|^[0-9]+ *-? *[0-9]*$|^[0-9]+$|Table|Contents|Page/ {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        in_table = 1
+        next
+    }
+
+    # Very short lines (1-3 words) - likely table data or section markers
+    NF <= 3 && NF > 0 {
+        if (para != "") {
+            print para
+            para = ""
+        }
+        print $0
+        next
+    }
+
+    # Join lines within paragraphs
+    {
+        if (para == "") {
+            para = $0
+        } else {
+            para = para " " $0
+        }
+    }
+
+    END {
+        if (para != "") print para
+    }
+    ' "$temp_file" > "${temp_file}.joined"
+    mv "${temp_file}.joined" "$temp_file"
+
+    # Clean up backup files
+    rm -f "${temp_file}".bak*
+
+    # Move temp to output
+    mv "$temp_file" "$output_file"
+
+    log_info "✓ Cleaned: $output_file"
+
+    # Show stats
+    local lines_before lines_after
+    lines_before=$(wc -l < "$input_file" | tr -d ' ')
+    lines_after=$(wc -l < "$output_file" | tr -d ' ')
+
+    echo ""
+    echo "Statistics:"
+    echo "  Lines before: $lines_before"
+    echo "  Lines after:  $lines_after"
+    echo "  Removed:      $((lines_before - lines_after)) blank lines"
+    echo ""
+}
+
+# Batch clean all *-raw.md files in a folder
+batch_clean_folder() {
+    local folder="$1"
+
+    if [[ ! -d "$folder" ]]; then
+        log_error "Folder not found: $folder"
+        exit 1
+    fi
+
+    log_info "Scanning folder: $folder"
+    echo ""
+
+    # Find all *-raw.md files
+    local raw_files=$(find "$folder" -maxdepth 1 -type f -name "*-raw.md" | sort)
+    local file_count=$(echo "$raw_files" | grep -c . || echo "0")
+
+    if [ "$file_count" -eq 0 ]; then
+        log_warn "No *-raw.md files found in $folder"
+        exit 0
+    fi
+
+    log_info "Found $file_count raw markdown files to clean"
+    echo ""
+
+    read -p "Press Enter to continue (or Ctrl+C to cancel)..."
+    echo ""
+
+    local processed=0
+    local succeeded=0
+    local failed=0
+    local start_time=$(date +%s)
+
+    while IFS= read -r raw_md_file; do
+        [[ -z "$raw_md_file" ]] && continue
+
+        processed=$((processed + 1))
+        local filename=$(basename "$raw_md_file")
+        local basename="${filename%-raw.md}"
+
+        echo -e "${BLUE}[$processed/$file_count]${NC} $filename"
+
+        # Try to find matching original file
+        local original_file=""
+        for ext in pdf docx epub html htm; do
+            local candidate="$folder/${basename}.$ext"
+            if [[ -f "$candidate" ]]; then
+                original_file="$candidate"
+                break
+            fi
+        done
+
+        if [[ -z "$original_file" ]]; then
+            echo -e "${YELLOW}  → No original file found, using basic cleaning${NC}"
+            clean_markdown "$raw_md_file" "${folder}/${basename}.md" "false"
+            succeeded=$((succeeded + 1))
+        else
+            echo -e "  Using: $(basename "$original_file")"
+            if clean_with_structure "$original_file" "$raw_md_file" "${folder}/${basename}.md" "false" 2>&1 | grep -q "✓"; then
+                succeeded=$((succeeded + 1))
+            else
+                failed=$((failed + 1))
+            fi
+        fi
+
+        echo ""
+    done <<< "$raw_files"
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Batch Cleaning Complete!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "📊 Summary:"
+    echo "  Total files: $file_count"
+    echo "  Succeeded:   $succeeded"
+    echo "  Failed:      $failed"
+    echo ""
+    echo "⏱️  Time taken: ${duration}s"
+    echo ""
+}
+
+# Interactive mode
+interactive_mode() {
+    echo -e "${CYAN}╔════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║          mdclean - Markdown Cleaner            ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    echo -e "${YELLOW}Drag & drop your markdown file here:${NC}"
+    read -r input_file
+    input_file=$(echo "$input_file" | xargs)
+
+    if [[ ! -f "$input_file" ]]; then
+        echo "Error: File not found: $input_file"
+        exit 1
+    fi
+
+    log_info "Input: $input_file"
+    echo ""
+
+    echo -e "${YELLOW}Save to new file or overwrite?${NC}"
+    echo "  1) Overwrite original file"
+    echo "  2) Save to new file"
+    read -p "Choice [1]: " save_choice
+    save_choice=${save_choice:-1}
+
+    local output_file
+    if [ "$save_choice" = "2" ]; then
+        echo ""
+        echo -e "${YELLOW}Output filename (will add -clean if blank):${NC}"
+        read -r output_file
+        if [[ -z "$output_file" ]]; then
+            output_file="${input_file%.md}-clean.md"
+        fi
+    else
+        output_file="$input_file"
+    fi
+
+    echo ""
+    echo -e "${YELLOW}Keep page markers? (<!-- Page NNN -->)${NC}"
+    read -p "[y/N]: " keep_choice
+    local keep_pages="false"
+    if [[ "$keep_choice" =~ ^[Yy]$ ]]; then
+        keep_pages="true"
+    fi
+
+    echo ""
+    echo -e "${CYAN}Ready to clean:${NC}"
+    echo "  Input:  $input_file"
+    echo "  Output: $output_file"
+    echo "  Keep pages: $keep_pages"
+    echo ""
+    read -p "Press Enter to continue..."
+
+    clean_markdown "$input_file" "$output_file" "$keep_pages"
+
+    echo ""
+    echo -e "${GREEN}✓ Done! Press any key to exit...${NC}"
+    read -n 1 -s
+}
+
+# Main
+main() {
+    local original_file=""
+    local raw_md_file=""
+    local output_file=""
+    local keep_pages="false"
+    local preview="false"
+    local positional_args=()
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                usage
+                ;;
+            -i|--interactive)
+                interactive_mode
+                exit 0
+                ;;
+            -k|--keep-pages)
+                keep_pages="true"
+                shift
+                ;;
+            -p|--preview)
+                preview="true"
+                shift
+                ;;
+            --auto)
+                shift
+                if [[ -n "$1" ]]; then
+                    batch_clean_folder "$1"
+                    exit 0
+                else
+                    log_error "--auto requires a folder path"
+                    exit 1
+                fi
+                ;;
+            *)
+                positional_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    # Determine mode based on arguments
+    if [ ${#positional_args[@]} -eq 0 ]; then
+        # No arguments - interactive mode
+        interactive_mode
+        exit 0
+    elif [ ${#positional_args[@]} -eq 1 ]; then
+        # Legacy mode: single markdown file to clean
+        raw_md_file="${positional_args[0]}"
+        output_file="$raw_md_file"  # Overwrite by default
+
+        if [[ "$preview" = "true" ]]; then
+            output_file=$(mktemp)
+        fi
+
+        clean_markdown "$raw_md_file" "$output_file" "$keep_pages"
+
+        if [[ "$preview" = "true" ]]; then
+            echo ""
+            echo "Preview of cleaned file:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            head -n 50 "$output_file"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            rm "$output_file"
+        fi
+        exit 0
+    elif [ ${#positional_args[@]} -eq 2 ] || [ ${#positional_args[@]} -eq 3 ]; then
+        # New mode: original file + raw markdown → cleaned markdown
+        original_file="${positional_args[0]}"
+        raw_md_file="${positional_args[1]}"
+
+        # Validate files exist
+        if [[ ! -f "$original_file" ]]; then
+            log_error "Original file not found: $original_file"
+            exit 1
+        fi
+
+        if [[ ! -f "$raw_md_file" ]]; then
+            log_error "Raw markdown file not found: $raw_md_file"
+            exit 1
+        fi
+
+        # Determine output file
+        if [ ${#positional_args[@]} -eq 3 ]; then
+            output_file="${positional_args[2]}"
+        else
+            # Default: remove -raw from filename
+            output_file="${raw_md_file%-raw.md}.md"
+        fi
+
+        # Track cleaning time
+        local start_time=$(date +%s)
+
+        # Reset cleaning log
+        CLEANING_LOG=""
+        log_to_file "MDCLEAN STAGE"
+        log_to_file "=============="
+
+        # Use structure-aware cleaning
+        clean_with_structure "$original_file" "$raw_md_file" "$output_file" "$keep_pages"
+
+        # Calculate time
+        local end_time=$(date +%s)
+        local duration=$((end_time - start_time))
+        log_to_file "TIME: ${duration}s"
+
+        # Append to conversion log if it exists
+        local conversion_log="${raw_md_file%.md}.conversion.log"
+        if [[ -f "$conversion_log" ]]; then
+            echo "" >> "$conversion_log"
+            echo "$CLEANING_LOG" >> "$conversion_log"
+            log_info "✓ Updated conversion log: $conversion_log"
+        else
+            # Create new log
+            echo "$CLEANING_LOG" > "$conversion_log"
+            log_info "✓ Created cleaning log: $conversion_log"
+        fi
+
+        exit 0
+    else
+        log_error "Too many arguments"
+        usage
+    fi
+}
+
+main "$@"

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# tt-local-shortcuts: noninteractive start/stop helper for Apple Shortcuts
+# Usage from Shortcuts (Run Shell Script):
+#   /path/to/tt-local-shortcuts s "Title" "Subtitle"
+#   /path/to/tt-local-shortcuts e
+
+CMD="$1"           # s or e
+ARG1="$2"          # Title (on start)
+ARG2="$3"          # Subtitle (on start)
+
+# Local location in Time Keeping project
+BASE_DIR="/Users/mac/Documents/Local Vault/Projects/Time Keeping/time_logs"
+mkdir -p "$BASE_DIR"
+
+# Get ISO week number
+get_week_number() {
+  date -u +%V
+}
+
+# Get year
+get_year() {
+  date -u +%Y
+}
+
+# Generate filename: 2025_W45_time.md
+WEEK_NUM=$(get_week_number)
+YEAR=$(get_year)
+WEEK_FILE="$BASE_DIR/${YEAR}_W${WEEK_NUM}_time.md"
+STATE_FILE="$BASE_DIR/.tt_local_state"
+
+timestamp(){ date +"%d %b %Y at %H:%M:%S"; }
+
+start_cmd(){
+  if [ -f "$STATE_FILE" ]; then
+    printf "ERROR: timer already running\n"
+    exit 1
+  fi
+  TITLE="${ARG1:-Untitled}"
+  SUB="${ARG2:-}"
+  START="$(timestamp)"
+  printf "%s\n%s\n%s\n" "$TITLE" "$SUB" "$START" > "$STATE_FILE"
+  printf "Started: %s — %s\n" "$TITLE" "$START"
+}
+
+end_cmd(){
+  if [ ! -f "$STATE_FILE" ]; then
+    printf "ERROR: no running timer\n"
+    exit 1
+  fi
+  {
+    read -r TITLE
+    read -r SUB
+    read -r START
+  } < "$STATE_FILE"
+  END="$(timestamp)"
+  {
+    echo "———"
+    echo "$TITLE"
+    [ -n "$SUB" ] && echo "$SUB"
+    echo "Start time: $START"
+    echo "until"
+    echo "End Time: $END"
+    echo ""
+  } >> "$WEEK_FILE"
+  rm -f "$STATE_FILE"
+  printf "Stopped: %s — %s\nAppended to: %s\n" "$TITLE" "$END" "$WEEK_FILE"
+}
+
+case "$CMD" in
+  s) start_cmd ;;
+  e) end_cmd ;;
+  *) printf "Usage: %s s \"Title\" \"Subtitle\"  OR  %s e\n" "$0" "$0"; exit 1 ;;
+esac
