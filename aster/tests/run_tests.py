@@ -7,6 +7,7 @@ Processes all test files and generates comprehensive report
 import subprocess
 import time
 import json
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple
@@ -69,7 +70,7 @@ class TestRunner:
         start_time = time.time()
         try:
             cmd = [
-                'python3',
+                sys.executable,  # Use same Python interpreter (respects venv)
                 str(self.script_path),
                 str(input_file),
                 '-o', str(output_file),
