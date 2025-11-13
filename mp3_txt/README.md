@@ -1,15 +1,15 @@
-# mp3_txt - Audio Transcription Tool
+# mp3_txt - Audio Transcription & Cleaning
 
-Lightweight CPU-based audio transcription using Vosk speech recognition. Convert MP3/audio files to timestamped markdown for integration with your knowledge management system.
+Audio transcription with Whisper (multilingual, 95-98% accuracy) or Vosk (English-only, 85-92% accuracy). Optional AI-powered transcript cleaning with local LLMs or Claude API.
 
 ## Features
 
-- ✅ **CPU-only processing** - No GPU required (perfect for MacBook)
+- ✅ **Whisper transcription** - Multilingual (Afrikaans, Spanish, French, etc.), no training needed
+- ✅ **Vosk transcription** - Fast English-only option, fully offline
+- ✅ **AI cleaning** - Fix grammar, capitalization, punctuation with llama3.2:1b (local, free) or Claude API (best quality)
+- ✅ **CPU-only** - No GPU required, works on 8GB RAM
 - ✅ **Batch processing** - Transcribe entire folders
-- ✅ **Streaming mode** - Low memory usage (~500MB per worker)
-- ✅ **Timestamped output** - Markdown format with time markers
-- ✅ **Offline** - No API calls, no internet required
-- ✅ **Fast** - 10min audio → 2-3min processing (small model)
+- ✅ **Offline capable** - Whisper + llama3.2:1b = fully offline workflow
 
 ## Quick Start
 
@@ -35,31 +35,35 @@ rm vosk-model-small-en-us-0.15.zip
 
 ### 2. Transcribe Audio
 
-**Simple one-word command:**
+**Whisper (recommended for multilingual):**
 ```bash
-cd "/Users/mac/Documents/Local Vault/Projects/mp3_txt"
-./transcribe
+python3 transcribe_enhanced.py single audio.mp3 --engine whisper --language af
+# Languages: en, af (Afrikaans), es, fr, de, pt, etc. (auto-detect if omitted)
 ```
 
-**Features:**
-- Drag-and-drop files or paste paths
-- Single file or batch folder
-- Optional timestamps (disabled by default)
-- Post-transcription renaming (add custom prefixes)
-- Auto-move to different folders
-- Clean, interactive prompts
-
-**Alternative: Python CLI (advanced)**
+**Vosk (English-only, faster):**
 ```bash
-# Single file (no timestamps)
-python3 transcribe_vosk_stream.py single audio.mp3 --outdir ./output
-
-# Single file (with timestamps)
-python3 transcribe_vosk_stream.py single audio.mp3 --outdir ./output --timestamps
-
-# Batch folder
-python3 transcribe_vosk_stream.py batch ./audio_folder --outdir ./output --concurrency 1
+./transcribe  # Interactive CLI with drag-and-drop
 ```
+
+### 3. Clean Transcripts (Optional)
+
+**Local LLM (free, offline):**
+```bash
+# Download model once
+ollama pull llama3.2:1b
+
+# Clean transcript
+python3 mdclean_simple.py transcriptions/input.md cleaned_output/output.md --model llama3.2:1b
+```
+
+**Claude API (best quality):**
+```bash
+export ANTHROPIC_API_KEY="your-key"
+python3 mdclean_claude.py transcriptions/input.md cleaned_output/output.md
+```
+
+**What cleaning does:** Fixes capitalization, punctuation, sentence structure. For headings/structure, use Claude API.
 
 ## Output Format
 
@@ -223,19 +227,23 @@ Larger windows (30.0) = fewer, longer paragraphs
 
 ## Performance
 
-**Hardware:** MacBook, 8GB RAM, Intel i5
+**Hardware:** MacBook, 8GB RAM
 
-**Small model (vosk-model-small-en-us-0.15):**
-- Accuracy: ~85% (good for clear speech)
+**Whisper (faster-whisper, base model):**
+- Accuracy: 95-98% (multilingual, including Afrikaans)
+- Speed: 10min audio → ~5min processing
+- RAM: ~1GB
+
+**Vosk (small model):**
+- Accuracy: ~85% (English-only)
 - Speed: 10min audio → 2-3min processing
-- RAM: ~500MB per worker
-- Recommended workers: 1-2
+- RAM: ~500MB
 
-**Large model (vosk-model-en-us-0.22):**
-- Accuracy: ~92% (better for accents, noise, multiple speakers)
-- Speed: 10min audio → 4-6min processing
-- RAM: ~1.5GB per worker
-- Recommended workers: 1
+**AI Cleaning (8GB RAM tested models):**
+- ✅ llama3.2:1b (700MB) - Works well, no hallucination
+- ❌ qwen2.5:0.5b (397MB) - Hallucinates, not recommended
+- ❌ llama3.2:3b (2GB) - Out of memory
+- ✅ Claude API - Best quality, requires internet + API key
 
 ## Troubleshooting
 
@@ -337,9 +345,10 @@ Free for personal use. Vosk is licensed under Apache 2.0.
 
 ---
 
-**Created:** 2025-11-11
-**Status:** ✅ Working
-**Success Rate:** 92% (with large model)
+**Updated:** 2025-11-13
+**Status:** ✅ Enhanced with Whisper + AI cleaning
+**Transcription:** Whisper 95-98% (multilingual) | Vosk 85-92% (English)
+**AI Cleaning:** llama3.2:1b (local, free) | Claude API (best quality)
 **Platform:** macOS (compatible with Linux)
 
-#audio #transcription #vosk #knowledge-management
+#audio #transcription #whisper #vosk #llama #claude #afrikaans #knowledge-management
