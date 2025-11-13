@@ -11,6 +11,9 @@ fastapi>=0.104.0           # Web framework
 uvicorn>=0.24.0            # ASGI server
 python-multipart>=0.0.6    # File uploads
 
+# Inbox watcher (automatic file processing)
+watchdog>=3.0.0            # File system monitoring
+
 # CSV and Excel support
 pandas>=2.0.0              # Excel and CSV processing
 openpyxl>=3.1.0            # Excel file reading (.xlsx)
