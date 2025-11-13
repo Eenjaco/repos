@@ -126,11 +126,19 @@
 
 ---
 
-## 🔧 Session Management Commands
+## 🔧 Session Management Tools
 
-Created new slash commands:
-- `/session_end` - Close session with git commits and summary
-- `/session_start` - Review recent work and pending tasks
+### Claude Code Commands (workspace-wide):
+- `/session_end` - Close session with git commits and summary (AI-powered)
+- `/session_start` - Review recent work and pending tasks (AI-powered)
+
+### Shell Scripts (universal, any terminal):
+- `session_end` - AI-generated commit messages using local Ollama
+- `session_start` - AI-generated briefings and suggestions
+
+**Scripts location**: `~/Documents/Applications/scripts/`
+**Installation**: `cd ~/Documents/Applications/scripts && ./install.sh`
+**Uses**: Local llama3.2:1b via Ollama (no Claude Code needed)
 
 ---
 
