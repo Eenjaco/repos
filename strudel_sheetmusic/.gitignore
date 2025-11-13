@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+
+# Environment variables
+.env
+.env.local
+
+# Output directories
+output/
+cache/
+temp/
+tmp/
+
+# Generated files
+*.musicxml
+*.mid
+*.midi
+*.wav
+*.mp3
+
+# Sample PDFs (keep directory structure, not files)
+samples/**/*.pdf
+# But keep README files
+!samples/**/README.md
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Java (for Audiveris)
+*.class
+*.jar
+
+# Node (if frontend added)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.dylib

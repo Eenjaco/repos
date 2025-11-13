@@ -1,0 +1,271 @@
+# Instrument Mapping Configuration Template
+# This file defines how musical staves/tracks map to Strudel instruments
+
+# Default mapping suggestions based on pitch range and clefs
+default_mappings:
+
+  # Keyboard instruments
+  organ:
+    - name: "Organ Manual I (Great)"
+      clef: "treble"
+      pitch_range: [C3, C6]
+      strudel_instrument: "organ_great"
+      sample_path: "samples/organ/great/"
+
+    - name: "Organ Manual II (Swell)"
+      clef: "treble"
+      pitch_range: [C3, C6]
+      strudel_instrument: "organ_swell"
+      sample_path: "samples/organ/swell/"
+
+    - name: "Organ Manual III (Positive/Choir)"
+      clef: "treble"
+      pitch_range: [C3, C6]
+      strudel_instrument: "organ_choir"
+      sample_path: "samples/organ/choir/"
+
+    - name: "Organ Pedal"
+      clef: "bass"
+      pitch_range: [C1, G3]
+      strudel_instrument: "organ_pedal"
+      sample_path: "samples/organ/pedal/"
+
+  piano:
+    - name: "Piano Right Hand"
+      clef: "treble"
+      pitch_range: [A0, C8]
+      strudel_instrument: "piano"
+      sample_path: "samples/piano/"
+
+    - name: "Piano Left Hand"
+      clef: "bass"
+      pitch_range: [A0, C8]
+      strudel_instrument: "piano"
+      sample_path: "samples/piano/"
+
+  # String instruments
+  guitar:
+    - name: "Guitar"
+      clef: "treble_8vb"  # Sounds octave lower
+      pitch_range: [E2, E5]
+      strudel_instrument: "guitar"
+      sample_path: "samples/guitar/"
+      transpose: -12  # If notated at pitch
+
+  bass_guitar:
+    - name: "Bass Guitar"
+      clef: "bass"
+      pitch_range: [E1, C4]
+      strudel_instrument: "bass"
+      sample_path: "samples/bass/"
+
+  violin:
+    - name: "Violin"
+      clef: "treble"
+      pitch_range: [G3, E7]
+      strudel_instrument: "violin"
+      sample_path: "samples/violin/"
+
+  # Voice
+  soprano:
+    - name: "Soprano"
+      clef: "treble"
+      pitch_range: [C4, C6]
+      strudel_instrument: "voice"
+      sample_path: "samples/voice/soprano/"
+
+  alto:
+    - name: "Alto"
+      clef: "treble"
+      pitch_range: [G3, F5]
+      strudel_instrument: "voice"
+      sample_path: "samples/voice/alto/"
+
+  tenor:
+    - name: "Tenor"
+      clef: "treble_8vb"
+      pitch_range: [C3, A4]
+      strudel_instrument: "voice"
+      sample_path: "samples/voice/tenor/"
+
+  bass_voice:
+    - name: "Bass"
+      clef: "bass"
+      pitch_range: [E2, E4]
+      strudel_instrument: "voice"
+      sample_path: "samples/voice/bass/"
+
+  # Percussion
+  drums:
+    - name: "Drum Kit"
+      clef: "percussion"
+      strudel_instrument: "drums"
+      sample_path: "samples/drums/"
+      # Percussion mapping uses specific noteheads/positions
+      note_mappings:
+        kick: "c1"
+        snare: "d1"
+        hihat_closed: "f#1"
+        hihat_open: "a#1"
+        tom_low: "f1"
+        tom_mid: "a1"
+        tom_high: "b1"
+        crash: "c#2"
+        ride: "d#2"
+
+# Strudel instrument categories
+strudel_instruments:
+  keyboards:
+    - piano
+    - organ
+    - rhodes
+    - synth
+    - keys
+
+  strings:
+    - violin
+    - viola
+    - cello
+    - bass
+    - guitar
+
+  winds:
+    - flute
+    - clarinet
+    - oboe
+    - trumpet
+    - trombone
+    - sax
+
+  percussion:
+    - drums
+    - perc
+    - tabla
+    - clap
+    - rim
+
+  electronic:
+    - bd (bass drum)
+    - sd (snare drum)
+    - hh (hi-hat)
+    - cp (clap)
+    - noise
+    - sine
+    - saw
+    - square
+
+# Articulation mapping to Strudel effects
+articulations:
+  staccato:
+    effect: "gain"
+    parameters: {value: 0.7}
+    duration_multiply: 0.5
+
+  legato:
+    effect: "legato"
+    parameters: {}
+    duration_multiply: 1.0
+
+  accent:
+    effect: "gain"
+    parameters: {value: 1.3}
+
+  tenuto:
+    duration_multiply: 0.95
+
+  marcato:
+    effect: "gain"
+    parameters: {value: 1.4}
+    duration_multiply: 0.8
+
+  fermata:
+    duration_multiply: 2.0
+
+  trill:
+    effect: "vibrato"
+    parameters: {speed: 8}
+
+  tremolo:
+    effect: "tremolo"
+    parameters: {depth: 0.5, speed: 8}
+
+# Dynamic markings to velocity/gain
+dynamics:
+  ppp: {velocity: 20, gain: 0.3}
+  pp: {velocity: 35, gain: 0.45}
+  p: {velocity: 50, gain: 0.6}
+  mp: {velocity: 65, gain: 0.75}
+  mf: {velocity: 80, gain: 0.85}
+  f: {velocity: 95, gain: 1.0}
+  ff: {velocity: 110, gain: 1.15}
+  fff: {velocity: 127, gain: 1.3}
+
+# Expression/effect mappings
+expressions:
+  crescendo:
+    effect: "gain"
+    parameters: {from: 0.6, to: 1.2, duration: "auto"}
+
+  diminuendo:
+    effect: "gain"
+    parameters: {from: 1.0, to: 0.4, duration: "auto"}
+
+  sforzando:
+    effect: "gain"
+    parameters: {value: 1.5, decay: 0.1}
+
+# Staff analysis rules for auto-detection
+auto_detection_rules:
+  - condition: "clef == 'treble' AND average_pitch > C5"
+    suggest: ["flute", "piccolo", "soprano"]
+
+  - condition: "clef == 'treble' AND C4 <= average_pitch <= C5"
+    suggest: ["violin", "oboe", "voice"]
+
+  - condition: "clef == 'bass' AND average_pitch > F2"
+    suggest: ["cello", "bassoon", "bass_voice"]
+
+  - condition: "clef == 'bass' AND average_pitch <= E2"
+    suggest: ["bass_guitar", "contrabass", "organ_pedal"]
+
+  - condition: "has_chords AND staff_count == 2"
+    suggest: ["piano", "organ"]
+
+  - condition: "clef == 'percussion'"
+    suggest: ["drums", "percussion"]
+
+# Example user configuration (saved per project)
+example_user_config:
+  project_name: "Bach BWV 578 Fugue in G minor"
+  source_file: "bwv578.pdf"
+
+  mappings:
+    - staff: 1
+      name: "Manual I"
+      instrument: "organ_great"
+      volume: 1.0
+      effects:
+        - {type: "reverb", mix: 0.3}
+
+    - staff: 2
+      name: "Manual II"
+      instrument: "organ_swell"
+      volume: 0.85
+      effects:
+        - {type: "reverb", mix: 0.4}
+
+    - staff: 3
+      name: "Pedal"
+      instrument: "organ_pedal"
+      volume: 1.1
+      effects:
+        - {type: "lowpass", cutoff: 800}
+
+  tuning:
+    temperament: "werkmeister_i"
+    base_frequency: 440
+
+  generation:
+    format: "readable"
+    include_comments: true
+    use_mini_notation: true
