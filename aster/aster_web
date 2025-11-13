@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Aster Web Server Launcher
+# Quick start: ./aster_web
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Activate venv if it exists
+if [ -d "$SCRIPT_DIR/venv" ]; then
+    source "$SCRIPT_DIR/venv/bin/activate"
+fi
+
+# Run the web server
+python3 "$SCRIPT_DIR/aster_web.py"
