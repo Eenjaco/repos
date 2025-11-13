@@ -709,17 +709,17 @@ def get_local_ip():
 
 def generate_qr_code(url):
     """Generate ASCII QR code for terminal display"""
-    qr = qrcode.QRCode(border=1)
+    qr = qrcode.QRCode(border=1, box_size=1)
     qr.add_data(url)
     qr.make()
 
-    # Generate ASCII QR code
+    # Generate compact ASCII QR code (single characters)
     output = []
     matrix = qr.get_matrix()
     for row in matrix:
         line = ""
         for cell in row:
-            line += "██" if cell else "  "
+            line += "█" if cell else " "
         output.append(line)
     return "\n".join(output)
 
