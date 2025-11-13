@@ -65,12 +65,12 @@ class InputRouter:
     """Detect file type and route to appropriate handler"""
 
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp'}
-    AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.flac', '.ogg'}
+    AUDIO_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.wma'}
     PDF_EXTENSIONS = {'.pdf'}
-    DOCUMENT_EXTENSIONS = {'.epub', '.docx', '.odt', '.rtf'}
+    DOCUMENT_EXTENSIONS = {'.epub', '.docx', '.odt', '.rtf', '.pptx', '.ppt'}
     WEB_EXTENSIONS = {'.html', '.htm', '.mhtml'}
     TEXT_EXTENSIONS = {'.txt', '.md', '.markdown'}
-    CSV_EXTENSIONS = {'.csv'}
+    CSV_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
 
     @classmethod
     def detect_type(cls, file_path: Path) -> str:
@@ -195,6 +195,33 @@ class AudioHandler:
         self.model_path = model_path
         self.timestamps = timestamps
 
+    def convert_audio_format(self, audio_path: Path, target_format: str = 'wav') -> Path:
+        """
+        Convert audio to target format using ffmpeg.
+        Useful for .wma and other less common formats.
+        Returns: Path to converted file
+        """
+        try:
+            # Check if ffmpeg is available
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise RuntimeError("ffmpeg not installed. Install with: brew install ffmpeg (Mac) or apt-get install ffmpeg (Linux)")
+
+        # Create temp file for converted audio
+        temp_dir = Path(tempfile.gettempdir())
+        converted_path = temp_dir / f"{audio_path.stem}_converted.{target_format}"
+
+        # Convert using ffmpeg
+        subprocess.run([
+            'ffmpeg', '-i', str(audio_path),
+            '-ar', '16000',  # 16kHz sample rate (good for speech)
+            '-ac', '1',       # Mono channel
+            str(converted_path),
+            '-y'              # Overwrite if exists
+        ], capture_output=True, check=True)
+
+        return converted_path
+
     def extract_text(self, audio_path: Path) -> str:
         """
         Transcribe audio file.
@@ -202,6 +229,11 @@ class AudioHandler:
         For now, we'll integrate with existing transcribe_vosk_stream.py logic.
         Returns: Transcribed text
         """
+        # Convert .wma and other formats to .wav first
+        if audio_path.suffix.lower() in ['.wma', '.m4a', '.flac', '.ogg']:
+            print(f"  Converting {audio_path.suffix} to .wav...")
+            audio_path = self.convert_audio_format(audio_path, 'wav')
+
         # Import transcription functionality
         try:
             # Try to import from mp3_txt directory
@@ -467,14 +499,28 @@ class CSVHandler:
         }
 
     def convert_csv_to_markdown(self, csv_path: Path) -> tuple[str, Optional[str]]:
-        """Convert CSV to markdown with analysis"""
+        """Convert CSV/Excel to markdown with analysis"""
         import csv
 
-        # Read CSV
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            headers = next(reader)
-            rows = list(reader)
+        # Handle Excel files (.xlsx, .xls)
+        if csv_path.suffix.lower() in ['.xlsx', '.xls']:
+            try:
+                import pandas as pd
+                # Read Excel file (first sheet)
+                df = pd.read_excel(csv_path)
+                headers = df.columns.tolist()
+                rows = df.values.tolist()
+                # Convert to strings
+                headers = [str(h) for h in headers]
+                rows = [[str(cell) if cell is not None else '' for cell in row] for row in rows]
+            except ImportError:
+                raise RuntimeError("Excel support requires pandas and openpyxl. Install with: pip install pandas openpyxl")
+        else:
+            # Read CSV
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                headers = next(reader)
+                rows = list(reader)
 
         # Detect type
         csv_type = self.detect_csv_type(headers) if self.csv_mode == 'auto' else self.csv_mode
