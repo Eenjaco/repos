@@ -1,6 +1,6 @@
 # Test Results Report
 
-Generated: 2025-11-13 10:21:38
+Generated: 2025-11-13 12:18:30
 
 ## Summary
 
@@ -14,13 +14,13 @@ Generated: 2025-11-13 10:21:38
 ### Audio
 - Files: 1
 - Success: 0/1 (0%)
-- Avg Time: 0.10s
+- Avg Time: 0.11s
 - Status: ❌
 
 ### Document
 - Files: 2
 - Success: 0/2 (0%)
-- Avg Time: 0.10s
+- Avg Time: 0.11s
 - Status: ❌
 
 ### Ebook
@@ -32,19 +32,19 @@ Generated: 2025-11-13 10:21:38
 ### Image
 - Files: 2
 - Success: 0/2 (0%)
-- Avg Time: 0.10s
+- Avg Time: 0.11s
 - Status: ❌
 
 ### Pdf
 - Files: 7
 - Success: 0/7 (0%)
-- Avg Time: 0.10s
+- Avg Time: 0.11s
 - Status: ❌
 
 ### Presentation
 - Files: 1
 - Success: 0/1 (0%)
-- Avg Time: 0.10s
+- Avg Time: 0.11s
 - Status: ❌
 
 ### Spreadsheet
@@ -65,7 +65,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: audio
 - **Size**: 157.3 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -81,7 +81,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: document
 - **Size**: 5947.3 KB
-- **Time**: 0.1s
+- **Time**: 0.12s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -97,7 +97,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: image
 - **Size**: 62.5 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -105,7 +105,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: image
 - **Size**: 3749.7 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -113,7 +113,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 321.6 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -121,7 +121,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 1473.6 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -129,7 +129,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 54.0 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -137,7 +137,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 726.2 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -145,7 +145,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 1958.6 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -161,7 +161,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: pdf
 - **Size**: 331.5 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -169,7 +169,7 @@ Generated: 2025-11-13 10:21:38
 
 - **Category**: presentation
 - **Size**: 50.8 KB
-- **Time**: 0.1s
+- **Time**: 0.11s
 - **Status**: FAILED
 - **Error**: Output file not created
 
@@ -218,11 +218,11 @@ Based on test results, create specialized prompts for:
 
 ### Performance Improvements
 - Add progress indicators for large files:
-  - Anthony de Mello - Sadhana - A Way to God.pdf (1473.6 KB took 0.1s)
-  - Cal Newport - Deep Work.pdf (726.2 KB took 0.1s)
-  - First 90 Days.pdf (1958.6 KB took 0.1s)
-  - NG Kerk Alma.docx (5947.3 KB took 0.1s)
-  - The Post-Individual.jpeg (3749.7 KB took 0.1s)
+  - Anthony de Mello - Sadhana - A Way to God.pdf (1473.6 KB took 0.11s)
+  - Cal Newport - Deep Work.pdf (726.2 KB took 0.11s)
+  - First 90 Days.pdf (1958.6 KB took 0.11s)
+  - NG Kerk Alma.docx (5947.3 KB took 0.12s)
+  - The Post-Individual.jpeg (3749.7 KB took 0.11s)
 
 ### Next Steps
 
