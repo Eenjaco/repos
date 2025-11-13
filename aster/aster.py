@@ -285,13 +285,26 @@ class AudioHandler:
             import wave
             import json
 
-            # Download model if not exists
+            # Check for Vosk model
             model_name = "vosk-model-small-en-us-0.15"
             model_path = Path.home() / ".cache" / "vosk" / model_name
 
             if not model_path.exists():
-                print(f"  Downloading Vosk model {model_name}...")
-                model = vosk.Model(model_name=model_name)
+                # Try automatic download first
+                try:
+                    print(f"  Downloading Vosk model {model_name}...")
+                    model = vosk.Model(model_name=model_name)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Vosk model not found and automatic download failed.\n"
+                        f"Please download manually:\n"
+                        f"  mkdir -p ~/.cache/vosk\n"
+                        f"  cd ~/.cache/vosk\n"
+                        f"  wget https://alphacephei.com/vosk/models/{model_name}.zip\n"
+                        f"  unzip {model_name}.zip\n"
+                        f"Or use a different model by placing it in ~/.cache/vosk/\n"
+                        f"Error: {e}"
+                    )
             else:
                 model = vosk.Model(str(model_path))
 

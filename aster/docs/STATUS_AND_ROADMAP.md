@@ -18,31 +18,41 @@
 - **Scanned PDFs** - Ghostscript + OCR ⚠️
   - Works but no image enhancement
 
-## ❌ What's NOT Working
+## ⚠️ What Needs Setup
 
-### Audio Transcription - **CRITICAL MISSING FEATURE**:
-- **Status**: `NotImplementedError` raised
-- **Location**: `aster.py` line 249
+### Audio Transcription - **IMPLEMENTED BUT REQUIRES MODEL**:
+- **Status**: ✅ Fully implemented with Vosk
+- **Location**: `aster.py` lines 281-432
 - **What exists**:
   - ✅ Format conversion (ffmpeg)
-  - ❌ Actual transcription (Vosk integration missing)
-- **Impact**: **ALL audio files fail**
+  - ✅ Duration detection (ffprobe)
+  - ✅ Audio chunking for large files (>10 min)
+  - ✅ Parallel transcription (4 workers)
+  - ✅ Vosk integration with automatic model download
+- **Setup Required**: Download Vosk model once
+- **Instructions**: See `docs/VOSK_MODEL_SETUP.md`
 
-### Test Results:
-```
-❌ 01 Track 1.wma - ERROR: NotImplementedError
+### Quick Setup:
+```bash
+mkdir -p ~/.cache/vosk
+cd ~/.cache/vosk
+wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip vosk-model-small-en-us-0.15.zip
 ```
 
 ## 🎯 Immediate Priorities
 
-### Priority 1: Fix Audio Transcription (CRITICAL)
-**Why**: Audio files completely broken
-**Time**: 2-3 hours
-**Files to create**:
-- Implement Vosk transcription in `AudioHandler.extract_text()`
-- Or integrate with existing `transcribe_vosk_stream.py` from mp3_txt
+### Priority 1: Setup Vosk Model (5 minutes)
+**Why**: Audio transcription implemented but needs model
+**Time**: 5 minutes (one-time setup)
+**Command**:
+```bash
+mkdir -p ~/.cache/vosk && cd ~/.cache/vosk
+wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip vosk-model-small-en-us-0.15.zip
+```
 
-### Priority 2: Test Document Optimizations
+### Priority 2: Test All Optimizations
 **Why**: Verify DOCX/PPTX fixes work
 **Time**: 30 minutes
 **Command**:
