@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test Runner for mdclean_universal
+Test Runner for Aster
 Processes all test files and generates comprehensive report
 """
 
@@ -15,7 +15,7 @@ class TestRunner:
     def __init__(self):
         self.test_dir = Path(__file__).parent
         self.output_dir = self.test_dir / "outputs"
-        self.script_path = self.test_dir.parent / "mdclean_universal.py"
+        self.script_path = self.test_dir.parent / "aster.py"
         self.results = []
 
         # File categorization
