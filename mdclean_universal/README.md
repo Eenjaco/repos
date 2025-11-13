@@ -43,7 +43,9 @@ ollama pull llama3.2:1b
 # Run it
 ./mdclean_universal.py document.pdf
 ./mdclean_universal.py photo.jpg
-./mdclean_universal.py budget.csv
+
+# CSV with automatic AI analysis
+./mdclean_universal.py budget.csv --analyze
 ```
 
 ---
@@ -127,9 +129,12 @@ mdclean_universal/
 # Audio (coming soon - use mp3_txt for now)
 ./mdclean_universal.py sermon.mp3
 
-# Financial CSV
+# Financial CSV with automatic AI analysis
+./mdclean_universal.py transactions.csv --analyze
+./mdclean_universal.py budget.csv --csv-mode budget --analyze
+
+# Or use standalone CSV handler
 python3 csv_handler.py transactions.csv --mode financial
-python3 csv_handler.py budget.csv --mode budget
 
 # Batch processing
 ./mdclean_universal.py --batch ~/Documents/inbox/
@@ -137,17 +142,18 @@ python3 csv_handler.py budget.csv --mode budget
 
 ### Financial Workflow
 ```bash
-# Convert bank export
-python3 csv_handler.py bank_nov_2025.csv --mode financial
+# Convert bank export with automatic AI analysis
+./mdclean_universal.py bank_nov_2025.csv --analyze
 
 # Result includes:
 # - Income/expense summary
 # - Category breakdown
 # - Running balance
-# - AI analysis prompt
+# - ✨ Automatic AI insights from Ollama
 # - Obsidian math formulas
 
-# Get AI insights
+# Manual analysis (if preferred)
+python3 csv_handler.py bank_nov_2025.csv --mode financial
 ollama run llama3.2:1b "[paste generated prompt]"
 ```
 

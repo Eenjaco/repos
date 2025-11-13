@@ -70,13 +70,14 @@ class InputRouter:
     DOCUMENT_EXTENSIONS = {'.epub', '.docx', '.odt', '.rtf'}
     WEB_EXTENSIONS = {'.html', '.htm', '.mhtml'}
     TEXT_EXTENSIONS = {'.txt', '.md', '.markdown'}
+    CSV_EXTENSIONS = {'.csv'}
 
     @classmethod
     def detect_type(cls, file_path: Path) -> str:
         """
         Detect input type based on file extension.
 
-        Returns: 'image', 'audio', 'pdf', 'document', 'web', or 'text'
+        Returns: 'image', 'audio', 'pdf', 'document', 'web', 'text', or 'csv'
         """
         extension = file_path.suffix.lower()
 
@@ -92,6 +93,8 @@ class InputRouter:
             return 'web'
         elif extension in cls.TEXT_EXTENSIONS:
             return 'text'
+        elif extension in cls.CSV_EXTENSIONS:
+            return 'csv'
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 
@@ -364,6 +367,184 @@ class DocumentParser:
 
 
 # ============================================================================
+# CSV Handler
+# ============================================================================
+
+class CSVHandler:
+    """Handle CSV to Markdown conversion with financial analysis"""
+
+    def __init__(self, csv_mode='auto'):
+        self.csv_mode = csv_mode
+        try:
+            import csv
+            import re
+            self.csv = csv
+            self.re = re
+        except ImportError:
+            print("CSV support requires standard library csv module")
+
+    def parse_amount(self, value: str) -> float:
+        """Parse amount string to float"""
+        if not value or value.strip() == '':
+            return 0.0
+        import re
+        cleaned = re.sub(r'[,$€£¥]', '', value.strip())
+        if cleaned.startswith('(') and cleaned.endswith(')'):
+            cleaned = '-' + cleaned[1:-1]
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+    def format_amount(self, amount: float) -> str:
+        """Format amount for display"""
+        if amount < 0:
+            return f"-${abs(amount):,.2f}"
+        else:
+            return f"${amount:,.2f}"
+
+    def detect_csv_type(self, headers: List[str]) -> str:
+        """Auto-detect CSV type based on headers"""
+        headers_lower = [h.lower() for h in headers]
+
+        if any(x in headers_lower for x in ['amount', 'transaction', 'description', 'date']):
+            return 'financial'
+        elif any(x in headers_lower for x in ['budgeted', 'actual', 'variance']):
+            return 'budget'
+        elif any(x in headers_lower for x in ['shares', 'cost_basis', 'current_value']):
+            return 'portfolio'
+        return 'generic'
+
+    def analyze_financial_transactions(self, headers: List[str], rows: List[List[str]]) -> Dict[str, Any]:
+        """Analyze financial transactions"""
+        headers_lower = [h.lower() for h in headers]
+
+        date_idx = next((i for i, h in enumerate(headers_lower) if 'date' in h), 0)
+        desc_idx = next((i for i, h in enumerate(headers_lower) if 'desc' in h), 1)
+        amount_idx = next((i for i, h in enumerate(headers_lower) if 'amount' in h), 2)
+        category_idx = next((i for i, h in enumerate(headers_lower) if 'category' in h or 'cat' in h), None)
+
+        total_income = 0.0
+        total_expenses = 0.0
+        category_totals = {}
+        running_balance = 0.0
+        transactions = []
+
+        for row in rows:
+            if len(row) <= amount_idx:
+                continue
+
+            amount = self.parse_amount(row[amount_idx])
+            category = row[category_idx] if category_idx and len(row) > category_idx else 'Uncategorized'
+
+            if amount > 0:
+                total_income += amount
+            else:
+                total_expenses += abs(amount)
+
+            if category not in category_totals:
+                category_totals[category] = 0.0
+            category_totals[category] += amount
+
+            running_balance += amount
+
+            transactions.append({
+                'date': row[date_idx] if len(row) > date_idx else '',
+                'description': row[desc_idx] if len(row) > desc_idx else '',
+                'amount': amount,
+                'category': category,
+                'balance': running_balance
+            })
+
+        net = total_income - total_expenses
+
+        return {
+            'total_income': total_income,
+            'total_expenses': total_expenses,
+            'net': net,
+            'category_totals': category_totals,
+            'transactions': transactions
+        }
+
+    def convert_csv_to_markdown(self, csv_path: Path) -> tuple[str, Optional[str]]:
+        """Convert CSV to markdown with analysis"""
+        import csv
+
+        # Read CSV
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            headers = next(reader)
+            rows = list(reader)
+
+        # Detect type
+        csv_type = self.detect_csv_type(headers) if self.csv_mode == 'auto' else self.csv_mode
+
+        # Analyze
+        analysis = None
+        if csv_type == 'financial':
+            analysis = self.analyze_financial_transactions(headers, rows)
+
+        # Build markdown
+        content = []
+        title = csv_path.stem.replace('_', ' ').replace('-', ' ').title()
+        content.append(f"# {title}\n")
+
+        # Summary
+        if analysis and csv_type == 'financial':
+            content.append("## Summary\n")
+            content.append(f"**Total Income:** {self.format_amount(analysis['total_income'])}")
+            content.append(f"**Total Expenses:** {self.format_amount(analysis['total_expenses'])}")
+            content.append(f"**Net:** {self.format_amount(analysis['net'])}\n")
+            content.append("**Category Breakdown:**")
+            for category, total in sorted(analysis['category_totals'].items(), key=lambda x: x[1], reverse=True):
+                content.append(f"- {category}: {self.format_amount(total)}")
+            content.append("")
+
+        # Transactions table
+        if analysis and csv_type == 'financial':
+            content.append("## Transactions\n")
+            content.append("| Date | Description | Amount | Category | Balance |")
+            content.append("|---|---|---|---|---|")
+            for trans in analysis['transactions']:
+                content.append(f"| {trans['date']} | {trans['description']} | {self.format_amount(trans['amount'])} | {trans['category']} | {self.format_amount(trans['balance'])} |")
+            content.append("")
+
+        # AI analysis placeholder
+        content.append("## AI Analysis\n")
+        content.append("[Analysis will be added by Ollama...]\n")
+
+        # Math notes
+        if analysis and csv_type == 'financial':
+            content.append("## Math Notes\n")
+            content.append(f"Total income: `$= {analysis['total_income']:.2f}`")
+            content.append(f"Total expenses: `$= {analysis['total_expenses']:.2f}`")
+            content.append(f"Net: `$= {analysis['net']:.2f}`")
+            content.append(f"Savings rate: `$= ({analysis['net']:.2f} / {analysis['total_income']:.2f}) * 100`%")
+
+        # Generate AI prompt
+        ai_prompt = None
+        if analysis and csv_type == 'financial':
+            ai_prompt = f"""Analyze this financial data and provide insights:
+
+Total Income: {self.format_amount(analysis['total_income'])}
+Total Expenses: {self.format_amount(analysis['total_expenses'])}
+Net: {self.format_amount(analysis['net'])}
+
+Category spending:
+{chr(10).join([f"- {cat}: {self.format_amount(amt)}" for cat, amt in analysis['category_totals'].items()])}
+
+Provide:
+1. Key insights about spending patterns
+2. Recommendations for improvement
+3. Any concerning trends
+4. Savings suggestions
+
+Keep response concise and actionable."""
+
+        return '\n'.join(content), ai_prompt
+
+
+# ============================================================================
 # Structure Detection (Unstructured)
 # ============================================================================
 
@@ -612,6 +793,9 @@ class UniversalProcessor:
         )
         self.audio_handler = AudioHandler()
         self.doc_parser = DocumentParser()
+        self.csv_handler = CSVHandler(
+            csv_mode=self.config.get('csv_mode', 'auto')
+        )
         self.structure_detector = StructureDetector()
         self.llm_cleaner = OllamaCleaner(
             model=self.config.get('ollama_model', 'llama3.2:1b')
@@ -643,6 +827,10 @@ class UniversalProcessor:
             # Detect file type
             file_type = InputRouter.detect_type(input_path)
             print(f"   Type: {file_type}")
+
+            # CSV files use a different pipeline
+            if file_type == 'csv':
+                return self._process_csv_file(input_path, output_path, start_time)
 
             # STEP 1: Extract raw text
             print("\n1️⃣  Extracting text...")
@@ -707,6 +895,89 @@ class UniversalProcessor:
                 processing_time=processing_time
             )
 
+    def _process_csv_file(self, input_path: Path, output_path: Optional[Path], start_time: datetime) -> ProcessingResult:
+        """Special pipeline for CSV files with automatic AI analysis"""
+        try:
+            # STEP 1: Convert CSV to markdown
+            print("\n1️⃣  Converting CSV to markdown...")
+            markdown_content, ai_prompt = self.csv_handler.convert_csv_to_markdown(input_path)
+            print(f"   ✓ Converted to markdown")
+
+            # STEP 2: Add frontmatter
+            print("\n2️⃣  Adding metadata...")
+            metadata = DocumentMetadata(
+                source_file=input_path.name,
+                file_type='csv',
+                date_processed=datetime.now().isoformat(),
+                original_size=input_path.stat().st_size,
+                tags=['csv', 'financial']
+            )
+
+            frontmatter = f"""---
+source: {metadata.source_file}
+date_processed: {metadata.date_processed}
+type: {metadata.file_type}
+tags: {metadata.tags}
+---
+
+"""
+            markdown_content = frontmatter + markdown_content
+            print(f"   ✓ Metadata added")
+
+            # STEP 3: Automatic AI analysis (if enabled and prompt available)
+            if ai_prompt and self.config.get('analyze', False):
+                print("\n3️⃣  Getting AI analysis from Ollama...")
+                try:
+                    import ollama
+                    response = ollama.generate(
+                        model=self.config.get('ollama_model', 'llama3.2:1b'),
+                        prompt=ai_prompt,
+                        options={'temperature': 0.2}
+                    )
+                    ai_analysis = response['response'].strip()
+
+                    # Replace placeholder with actual analysis
+                    markdown_content = markdown_content.replace(
+                        "[Analysis will be added by Ollama...]",
+                        ai_analysis
+                    )
+                    print(f"   ✓ AI analysis complete")
+
+                except Exception as e:
+                    print(f"   ⚠️  Ollama analysis failed: {e}")
+                    print(f"   Keeping placeholder - you can add analysis manually")
+
+            # STEP 4: Save output
+            if output_path is None:
+                output_path = input_path.parent / f"{input_path.stem}_processed.md"
+
+            output_path.write_text(markdown_content, encoding='utf-8')
+
+            processing_time = (datetime.now() - start_time).total_seconds()
+
+            print(f"\n✅ Success! Saved to: {output_path}")
+            print(f"   Processing time: {processing_time:.1f}s")
+
+            if ai_prompt and not self.config.get('analyze', False):
+                print(f"\n💡 Tip: Use --analyze flag to automatically call Ollama for AI insights")
+
+            return ProcessingResult(
+                success=True,
+                output_path=output_path,
+                metadata=metadata.__dict__,
+                processing_time=processing_time
+            )
+
+        except Exception as e:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            print(f"\n❌ Error: {str(e)}")
+
+            return ProcessingResult(
+                success=False,
+                error=str(e),
+                processing_time=processing_time
+            )
+
     def _extract_text(self, input_path: Path, file_type: str) -> str:
         """Extract text based on file type"""
         if file_type == 'image':
@@ -731,7 +1002,8 @@ class UniversalProcessor:
         all_files = []
         for ext_set in [InputRouter.IMAGE_EXTENSIONS, InputRouter.AUDIO_EXTENSIONS,
                        InputRouter.PDF_EXTENSIONS, InputRouter.DOCUMENT_EXTENSIONS,
-                       InputRouter.WEB_EXTENSIONS, InputRouter.TEXT_EXTENSIONS]:
+                       InputRouter.WEB_EXTENSIONS, InputRouter.TEXT_EXTENSIONS,
+                       InputRouter.CSV_EXTENSIONS]:
             for ext in ext_set:
                 all_files.extend(input_dir.glob(f"*{ext}"))
 
@@ -786,12 +1058,17 @@ Examples:
   # Skip LLM cleaning (fast mode)
   mdclean_universal doc.pdf --no-llm
 
+  # CSV with automatic AI analysis
+  mdclean_universal transactions.csv --analyze
+  mdclean_universal budget.csv --csv-mode budget --analyze
+
 Supported formats:
   - Images: JPG, PNG, TIFF, BMP (OCR)
   - Audio: MP3, M4A, WAV, FLAC (transcription)
   - Documents: PDF, EPUB, DOCX, ODT, RTF
   - Web: HTML, HTM
   - Text: TXT, MD
+  - CSV: Financial data with AI analysis
 """
     )
 
@@ -805,6 +1082,10 @@ Supported formats:
                        help='Enable handwriting OCR mode')
     parser.add_argument('--no-llm', action='store_true',
                        help='Skip LLM cleaning (fast mode)')
+    parser.add_argument('--analyze', action='store_true',
+                       help='Automatically run AI analysis with Ollama (for CSV files)')
+    parser.add_argument('--csv-mode', type=str, choices=['auto', 'financial', 'budget', 'portfolio', 'debt'],
+                       default='auto', help='CSV type detection mode (default: auto)')
     parser.add_argument('--model', type=str, default='llama3.2:1b',
                        help='Ollama model to use (default: llama3.2:1b)')
     parser.add_argument('--no-frontmatter', action='store_true',
@@ -830,6 +1111,8 @@ Supported formats:
         'ocr_handwriting': args.handwriting,
         'ollama_model': args.model,
         'add_frontmatter': not args.no_frontmatter,
+        'analyze': args.analyze,
+        'csv_mode': args.csv_mode,
     }
 
     # Initialize processor
