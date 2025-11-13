@@ -292,14 +292,48 @@ class DocumentParser:
             return True  # Assume scanned if check fails
 
     def extract_pdf_text(self, pdf_path: Path) -> str:
-        """Extract text from PDF"""
-        if not self.check_dependencies('pdf'):
-            raise RuntimeError("pdftotext not installed. Install with: brew install poppler")
+        """Extract text from PDF using Unstructured for better structure, fallback to pdftotext"""
 
         # Check if scanned
         if self.is_scanned_pdf(pdf_path):
             print("  Detected scanned PDF, using OCR...")
             return self.extract_scanned_pdf(pdf_path)
+
+        # Try Unstructured first for better structure preservation
+        try:
+            from unstructured.partition.pdf import partition_pdf
+            print("  Using Unstructured library for better PDF structure...")
+
+            elements = partition_pdf(filename=str(pdf_path))
+
+            text_parts = []
+            for elem in elements:
+                elem_type = elem.__class__.__name__
+                elem_text = str(elem).strip()
+
+                if not elem_text:
+                    continue
+
+                # Add markers for structure detection
+                if elem_type == 'Title':
+                    text_parts.append(f"\n## {elem_text}\n")
+                elif elem_type == 'ListItem':
+                    text_parts.append(f"- {elem_text}")
+                else:
+                    text_parts.append(elem_text)
+
+            return '\n\n'.join(text_parts)
+
+        except ImportError:
+            print("  Unstructured library not available, using pdftotext...")
+        except Exception as e:
+            print(f"  Warning: Unstructured PDF parsing failed ({e}), falling back to pdftotext...")
+
+        # Fallback to pdftotext
+        if not self.check_dependencies('pdf'):
+            raise RuntimeError("pdftotext not installed. Install with: brew install poppler")
+
+        print("  Using pdftotext for extraction...")
 
         # Extract text with layout preservation
         result = subprocess.run(
@@ -342,13 +376,104 @@ class DocumentParser:
             return "\n".join(all_text)
 
     def extract_document_text(self, doc_path: Path) -> str:
-        """Extract text from DOCX, EPUB, etc. using pandoc"""
+        """
+        Extract text from DOCX, PPTX, EPUB using Unstructured library for better structure preservation.
+        Falls back to pandoc for unsupported formats.
+        """
+        extension = doc_path.suffix.lower()
+
+        # Try to use Unstructured for structured parsing (preserves document structure)
+        try:
+            if extension == '.docx':
+                # Use Unstructured for DOCX - preserves titles, paragraphs, lists
+                try:
+                    from unstructured.partition.docx import partition_docx
+                    print("  Using Unstructured library for better structure detection...")
+                    elements = partition_docx(filename=str(doc_path))
+
+                    # Convert elements to text with basic structure markers
+                    text_parts = []
+                    for elem in elements:
+                        elem_type = elem.__class__.__name__
+                        elem_text = str(elem).strip()
+
+                        if not elem_text:
+                            continue
+
+                        # Add markers for structure detection
+                        if elem_type == 'Title':
+                            text_parts.append(f"\n## {elem_text}\n")
+                        elif elem_type == 'ListItem':
+                            text_parts.append(f"- {elem_text}")
+                        else:
+                            text_parts.append(elem_text)
+
+                    return '\n\n'.join(text_parts)
+                except ImportError:
+                    print("  Unstructured library not available, falling back to pandoc...")
+
+            elif extension == '.pptx' or extension == '.ppt':
+                # Use Unstructured for PowerPoint - preserves slide structure
+                try:
+                    from unstructured.partition.pptx import partition_pptx
+                    print("  Using Unstructured library for PowerPoint slide structure...")
+                    elements = partition_pptx(filename=str(doc_path))
+
+                    text_parts = []
+                    for elem in elements:
+                        elem_type = elem.__class__.__name__
+                        elem_text = str(elem).strip()
+
+                        if not elem_text:
+                            continue
+
+                        if elem_type == 'Title':
+                            text_parts.append(f"\n## {elem_text}\n")
+                        elif elem_type == 'ListItem':
+                            text_parts.append(f"- {elem_text}")
+                        else:
+                            text_parts.append(elem_text)
+
+                    return '\n\n'.join(text_parts)
+                except ImportError:
+                    print("  Unstructured library not available, falling back to pandoc...")
+
+            elif extension == '.epub':
+                # Use Unstructured for EPUB
+                try:
+                    from unstructured.partition.epub import partition_epub
+                    print("  Using Unstructured library for EPUB structure...")
+                    elements = partition_epub(filename=str(doc_path))
+
+                    text_parts = []
+                    for elem in elements:
+                        elem_type = elem.__class__.__name__
+                        elem_text = str(elem).strip()
+
+                        if not elem_text:
+                            continue
+
+                        if elem_type == 'Title':
+                            text_parts.append(f"\n## {elem_text}\n")
+                        elif elem_type == 'ListItem':
+                            text_parts.append(f"- {elem_text}")
+                        else:
+                            text_parts.append(elem_text)
+
+                    return '\n\n'.join(text_parts)
+                except ImportError:
+                    print("  Unstructured library not available, falling back to pandoc...")
+
+        except Exception as e:
+            print(f"  Warning: Unstructured parsing failed ({e}), falling back to pandoc...")
+
+        # Fallback to pandoc for compatibility
         if not self.check_dependencies('document'):
             raise RuntimeError("pandoc not installed. Install with: brew install pandoc")
 
-        # Detect format
-        extension = doc_path.suffix.lower()
+        print("  Using pandoc for text extraction...")
 
+        # Detect format for pandoc
         if extension == '.epub':
             from_format = 'epub'
         elif extension == '.docx':
@@ -357,6 +482,8 @@ class DocumentParser:
             from_format = 'odt'
         elif extension == '.rtf':
             from_format = 'rtf'
+        elif extension in ['.pptx', '.ppt']:
+            from_format = 'pptx'
         else:
             from_format = 'docx'  # Default
 
@@ -370,9 +497,42 @@ class DocumentParser:
         return result.stdout
 
     def extract_html_text(self, html_path: Path) -> str:
-        """Extract text from HTML using pandoc"""
+        """Extract text from HTML using Unstructured, fallback to pandoc"""
+
+        # Try Unstructured first for better structure
+        try:
+            from unstructured.partition.html import partition_html
+            print("  Using Unstructured library for HTML structure...")
+
+            elements = partition_html(filename=str(html_path))
+
+            text_parts = []
+            for elem in elements:
+                elem_type = elem.__class__.__name__
+                elem_text = str(elem).strip()
+
+                if not elem_text:
+                    continue
+
+                if elem_type == 'Title':
+                    text_parts.append(f"\n## {elem_text}\n")
+                elif elem_type == 'ListItem':
+                    text_parts.append(f"- {elem_text}")
+                else:
+                    text_parts.append(elem_text)
+
+            return '\n\n'.join(text_parts)
+
+        except ImportError:
+            print("  Unstructured library not available, using pandoc...")
+        except Exception as e:
+            print(f"  Warning: Unstructured HTML parsing failed ({e}), falling back to pandoc...")
+
+        # Fallback to pandoc
         if not self.check_dependencies('web'):
             raise RuntimeError("pandoc not installed. Install with: brew install pandoc")
+
+        print("  Using pandoc for extraction...")
 
         result = subprocess.run(
             ['pandoc', str(html_path), '-f', 'html', '-t', 'plain', '--wrap=none'],
