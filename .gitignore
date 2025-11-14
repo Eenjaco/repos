@@ -55,3 +55,6 @@ secrets.json
 # Temporary test outputs
 /tmp/
 test_output/
+*.zip
+*.tar.gz
+*.tar
