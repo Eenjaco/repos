@@ -46,7 +46,12 @@ class TrainingDataProcessor:
         return 'unknown'
 
     def get_all_files(self) -> List[Path]:
-        """Get all processable files from training_data folder recursively"""
+        """Get all processable files from training_data folder recursively
+
+        Returns files sorted by priority:
+        1. Fast files first (documents, PDFs, images)
+        2. Slow files last (audio)
+        """
         files = []
 
         if not self.training_folder.exists():
@@ -62,22 +67,67 @@ class TrainingDataProcessor:
                     item.name.lower() not in ['readme.md', 'readme.txt']):
                     files.append(item)
 
-        return sorted(files)
+        # Sort by processing priority (fast files first, audio last)
+        def get_priority(file_path: Path) -> int:
+            category = self.get_category(file_path)
+            priority_map = {
+                'text': 1,        # Fastest
+                'csv': 1,
+                'web': 2,
+                'document': 3,
+                'pdf': 3,
+                'presentation': 3,
+                'ebook': 4,
+                'spreadsheet': 5,
+                'image': 6,
+                'audio': 10       # Slowest - process last!
+            }
+            return priority_map.get(category, 7)
 
-    def process_single_file(self, input_file: Path) -> Dict:
-        """Process a single file with Aster"""
+        # Sort by priority, then by name
+        files.sort(key=lambda f: (get_priority(f), str(f)))
+
+        return files
+
+    def process_single_file(self, input_file: Path, skip_existing: bool = True) -> Dict:
+        """Process a single file with Aster
+
+        Args:
+            input_file: Path to input file
+            skip_existing: If True, skip files that already have output
+
+        Returns:
+            Dict with processing results
+        """
         # Calculate relative path for better organization
         rel_path = input_file.relative_to(self.training_folder)
+
+        # Create output path maintaining folder structure
+        output_path = self.output_folder / rel_path.parent / f"{input_file.stem}.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Check if already processed (for resume capability)
+        if skip_existing and output_path.exists():
+            size_kb = round(output_path.stat().st_size / 1024, 1)
+            print(f"\n⏭️  SKIPPING (already processed): {rel_path}")
+            print(f"   Output exists: {output_path.relative_to(self.output_folder)} ({size_kb} KB)")
+            return {
+                'filename': str(rel_path),
+                'absolute_path': str(input_file),
+                'size_kb': round(input_file.stat().st_size / 1024, 1),
+                'category': self.get_category(input_file),
+                'timestamp': datetime.now().isoformat(),
+                'success': True,
+                'skipped': True,
+                'output_file': str(output_path.relative_to(self.output_folder)),
+                'output_size_kb': size_kb
+            }
 
         print(f"\n{'='*80}")
         print(f"Processing: {rel_path}")
         print(f"Size: {input_file.stat().st_size / 1024:.1f} KB")
         print(f"Category: {self.get_category(input_file)}")
         print(f"{'='*80}")
-
-        # Create output path maintaining folder structure
-        output_path = self.output_folder / rel_path.parent / f"{input_file.stem}.md"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         result = {
             'filename': str(rel_path),
@@ -100,11 +150,25 @@ class TrainingDataProcessor:
 
             print(f"Command: {' '.join(cmd)}\n")
 
+            # Dynamic timeout based on file category
+            category = self.get_category(input_file)
+            timeout_map = {
+                'audio': 3600,        # 60 minutes for audio (Vosk transcription is slow)
+                'spreadsheet': 1200,  # 20 minutes for Excel
+                'image': 600,         # 10 minutes for images (OCR)
+                'pdf': 600,          # 10 minutes for PDFs
+                'document': 300,      # 5 minutes for docs
+                'presentation': 300,  # 5 minutes for presentations
+            }
+            timeout = timeout_map.get(category, 300)  # Default 5 minutes
+
+            print(f"⏱️  Timeout: {timeout}s ({timeout/60:.0f} min)\n")
+
             process = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minute timeout for large files
+                timeout=timeout
             )
 
             elapsed = time.time() - start_time
@@ -174,6 +238,7 @@ class TrainingDataProcessor:
             return
 
         successful = sum(1 for r in self.results if r.get('success', False))
+        skipped = sum(1 for r in self.results if r.get('skipped', False))
         failed = total - successful
         total_time = sum(r.get('processing_time', 0) for r in self.results)
 
@@ -198,11 +263,12 @@ Folder: {self.training_folder}
 
 ## Summary
 
-- **Total Files Processed**: {total}
+- **Total Files**: {total}
 - **Successful**: {successful} ({successful/total*100:.1f}%)
+- **Skipped**: {skipped} ({skipped/total*100:.1f}%) - already processed
 - **Failed**: {failed} ({failed/total*100:.1f}%)
 - **Total Processing Time**: {total_time/60:.1f} minutes
-- **Average Time per File**: {total_time/total:.1f} seconds
+- **Average Time per File**: {total_time/(total-skipped):.1f} seconds (excluding skipped)
 - **Success Rate**: {'✅ EXCELLENT' if successful/total > 0.8 else '⚠️ NEEDS WORK' if successful/total > 0.5 else '❌ POOR'}
 
 ## Results by Category
@@ -288,22 +354,42 @@ Output files saved to: `{self.output_folder.relative_to(self.script_dir)}`
         print(f"📂 Output folder: {self.output_folder}")
         print(f"{'='*80}")
 
-    def process_all(self):
-        """Process all training data files"""
+    def process_all(self, skip_existing: bool = False):
+        """Process all training data files
+
+        Args:
+            skip_existing: If True, skip files that already have output (resume mode)
+        """
         files = self.get_all_files()
 
         if not files:
             print(f"❌ No files found in {self.training_folder}")
             return
 
-        print(f"\n🚀 Found {len(files)} files to process\n")
-        print(f"📂 Training folder: {self.training_folder}")
-        print(f"📂 Output folder: {self.output_folder}\n")
+        # Show file breakdown by category
+        categories_count = {}
+        for f in files:
+            cat = self.get_category(f)
+            categories_count[cat] = categories_count.get(cat, 0) + 1
+
+        print(f"\n🚀 Found {len(files)} files to process")
+        print(f"\n📊 Files by category (processing order):")
+        for cat, count in sorted(categories_count.items(), key=lambda x: (
+            {'text': 1, 'csv': 1, 'web': 2, 'document': 3, 'pdf': 3, 'presentation': 3,
+             'ebook': 4, 'spreadsheet': 5, 'image': 6, 'audio': 10}.get(x[0], 7), x[0]
+        )):
+            print(f"   {cat.title()}: {count} files")
+
+        print(f"\n📂 Training folder: {self.training_folder}")
+        print(f"📂 Output folder: {self.output_folder}")
+        if skip_existing:
+            print(f"⏭️  Resume mode: Skipping already processed files")
+        print()
 
         # Process each file
         for i, file_path in enumerate(files, 1):
             print(f"\n[{i}/{len(files)}]")
-            result = self.process_single_file(file_path)
+            result = self.process_single_file(file_path, skip_existing=skip_existing)
             self.results.append(result)
 
         # Generate report
@@ -311,6 +397,7 @@ Output files saved to: `{self.output_folder.relative_to(self.script_dir)}`
 
         # Print summary
         successful = sum(1 for r in self.results if r.get('success', False))
+        skipped = sum(1 for r in self.results if r.get('skipped', False))
         total = len(self.results)
         total_time = sum(r.get('processing_time', 0) for r in self.results)
 
@@ -318,7 +405,9 @@ Output files saved to: `{self.output_folder.relative_to(self.script_dir)}`
         print(f"🎯 Processing Summary:")
         print(f"   Total: {total} files")
         print(f"   Success: {successful} ({successful/total*100:.1f}%)")
-        print(f"   Failed: {total - successful}")
+        if skipped > 0:
+            print(f"   Skipped: {skipped} (already processed)")
+        print(f"   Failed: {total - successful - skipped}")
         print(f"   Time: {total_time/60:.1f} minutes")
         print(f"{'='*80}\n")
 
@@ -338,4 +427,4 @@ if __name__ == '__main__':
         output_folder=args.output
     )
 
-    processor.process_all()
+    processor.process_all(skip_existing=args.resume)
