@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# sync - Pull latest changes from current branch
+#
+# Usage: ./sync
+
+set -e
+
+BRANCH=$(git branch --show-current)
+
+echo "Syncing branch: $BRANCH"
+git fetch origin "$BRANCH"
+git pull origin "$BRANCH"
+echo "✓ Synced successfully"

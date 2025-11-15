@@ -1,0 +1,1557 @@
+#!/usr/bin/env node
+
+/**
+ * Time Tracking CLI Tool v3.0
+ * Features: SQLite storage, Apple Shortcut import, subcategories, weekly goals, progress tracking
+ */
+
+const sqlite3 = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { execSync } = require('child_process');
+
+const DB_PATH = path.join(__dirname, 'timetracking.db');
+const TIMER_PATH = path.join(__dirname, '.active-timer.json');
+const MARKDOWN_DIR = path.join(__dirname, 'time_logs');
+
+// Omarchy Color Theme
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+
+  // Omarchy theme colors
+  green: '\x1b[38;5;42m',        // Bright green (like code highlighting)
+  darkBlue: '\x1b[38;5;67m',     // Dark grey-blue
+  cyan: '\x1b[38;5;80m',         // Lighter blue-cyan
+  orange: '\x1b[38;5;214m',      // Warm orange for warnings
+  yellow: '\x1b[38;5;226m',      // Yellow for highlights
+  grey: '\x1b[38;5;240m',        // Dark grey
+  white: '\x1b[38;5;255m',       // Bright white
+
+  // Semantic colors
+  success: '\x1b[38;5;42m',      // Green
+  progress: '\x1b[38;5;80m',     // Cyan
+  header: '\x1b[38;5;67m',       // Dark blue
+  number: '\x1b[38;5;226m',      // Yellow
+  category: '\x1b[38;5;67m',     // Dark blue
+  time: '\x1b[38;5;42m',         // Green
+  label: '\x1b[38;5;240m',       // Grey
+};
+
+// Helper to colorize text
+function c(text, color) {
+  return `${color}${text}${colors.reset}`;
+}
+
+// Progress bar with color
+function colorProgressBar(percentage, barLength = 12) {
+  const filled = Math.round((percentage / 100) * barLength);
+  const empty = barLength - filled;
+
+  let bar = '';
+  if (percentage >= 100) {
+    bar = c('█'.repeat(filled), colors.success);
+  } else if (percentage >= 75) {
+    bar = c('█'.repeat(filled), colors.progress) + c('░'.repeat(empty), colors.grey);
+  } else if (percentage >= 50) {
+    bar = c('█'.repeat(filled), colors.cyan) + c('░'.repeat(empty), colors.grey);
+  } else {
+    bar = c('█'.repeat(filled), colors.darkBlue) + c('░'.repeat(empty), colors.grey);
+  }
+
+  return bar;
+}
+
+// Timer management functions
+function saveTimer(timerData) {
+  fs.writeFileSync(TIMER_PATH, JSON.stringify(timerData, null, 2));
+}
+
+function loadTimer() {
+  if (fs.existsSync(TIMER_PATH)) {
+    const data = fs.readFileSync(TIMER_PATH, 'utf-8');
+    return JSON.parse(data);
+  }
+  return null;
+}
+
+function clearTimer() {
+  if (fs.existsSync(TIMER_PATH)) {
+    fs.unlinkSync(TIMER_PATH);
+  }
+}
+
+function getTimerDuration(startTime) {
+  const start = new Date(startTime);
+  const now = new Date();
+  const diffMs = now - start;
+  return Math.floor(diffMs / 1000 / 60); // minutes
+}
+
+// Initialize database with enhanced schema
+function initDatabase() {
+  const db = new sqlite3(DB_PATH);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL,
+      subcategory TEXT,
+      description TEXT,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS weekly_goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_start TEXT NOT NULL,
+      week_end TEXT NOT NULL,
+      category TEXT NOT NULL,
+      goal_minutes INTEGER NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(week_start, category)
+    );
+
+    CREATE TABLE IF NOT EXISTS category_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      old_name TEXT NOT NULL,
+      new_name TEXT NOT NULL,
+      changed_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_date ON time_entries(date);
+    CREATE INDEX IF NOT EXISTS idx_category ON time_entries(category);
+    CREATE INDEX IF NOT EXISTS idx_subcategory ON time_entries(subcategory);
+    CREATE INDEX IF NOT EXISTS idx_week_goals ON weekly_goals(week_start);
+  `);
+
+  return db;
+}
+
+// Get Monday of current week
+function getWeekStart(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().split('T')[0];
+}
+
+// Get Sunday of current week
+function getWeekEnd(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  // If Sunday (0), use today. Otherwise, calculate next Sunday
+  const diff = day === 0 ? 0 : (7 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString().split('T')[0];
+}
+
+// Get ISO week filename (2025_W45_time.md format)
+function getWeekFilename(date = new Date()) {
+  const d = new Date(date);
+
+  // Get ISO week number
+  const firstDayOfYear = new Date(d.getFullYear(), 0, 1);
+  const pastDaysOfYear = (d - firstDayOfYear) / 86400000;
+  const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+
+  const year = d.getFullYear();
+  const weekStr = String(weekNum).padStart(2, '0');
+
+  return `${year}_W${weekStr}_time.md`;
+}
+
+// Format datetime in Apple Shortcuts format (e.g., "07 Nov 2025 at 09:30:01")
+function formatAppleShortcutTime(date) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+
+  return `${day} ${month} ${year} at ${hours}:${minutes}:${seconds}`;
+}
+
+// Append entry to markdown file (via bash helper script to bypass iCloud permissions)
+function appendToMarkdown(category, subcategory, startDate, endDate, description = '') {
+  const weekFile = path.join(MARKDOWN_DIR, getWeekFilename(startDate));
+  const helperScript = path.join(__dirname, 'append-to-markdown.sh');
+
+  // Format data for table row
+  const date = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  const startTime = startDate.toTimeString().split(' ')[0]; // HH:MM:SS
+  const endTime = endDate.toTimeString().split(' ')[0]; // HH:MM:SS
+  const duration = calculateDuration(startDate, endDate);
+  const durationStr = formatDuration(duration);
+  const subcat = subcategory || '';
+  const desc = description || '';
+
+  // Call bash helper script
+  execSync(`"${helperScript}" "${weekFile}" "${date}" "${category}" "${subcat}" "${startTime}" "${endTime}" "${durationStr}" "${desc}"`);
+}
+
+// Parse Apple Shortcut format with subcategories
+function parseShortcutData(content) {
+  const entries = [];
+  const sections = content.split('———').filter(s => s.trim());
+
+  for (const section of sections) {
+    const lines = section.trim().split('\n')
+      .filter(l => l.trim())
+      .filter(l => !l.match(/^-{3,}$/)); // Skip lines that are just dashes (---)
+
+    if (lines.length < 3) continue;
+
+    let category = null;
+    let subcategory = null;
+    let description = '';
+    let startTime = null;
+    let endTime = null;
+    let lineIdx = 0;
+
+    // First line is always category
+    category = lines[lineIdx].trim();
+    lineIdx++;
+
+    // Check if second line is subcategory or description or start time
+    if (lineIdx < lines.length && !lines[lineIdx].startsWith('Start time:')) {
+      const possibleSubcat = lines[lineIdx].trim();
+
+      // If next line is "Start time", this is a subcategory
+      if (lineIdx + 1 < lines.length && lines[lineIdx + 1].startsWith('Start time:')) {
+        subcategory = possibleSubcat;
+        lineIdx++;
+      } else if (!possibleSubcat.startsWith('until') && !possibleSubcat.startsWith('End Time:') && !possibleSubcat.startsWith('End time:')) {
+        // It's a description
+        description = possibleSubcat;
+        lineIdx++;
+      }
+    }
+
+    // Parse remaining lines for start/end times and additional description
+    for (let i = lineIdx; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      if (line.startsWith('Start time:')) {
+        startTime = line.replace('Start time:', '').trim();
+      } else if (line.startsWith('End Time:') || line.startsWith('End time:')) {
+        endTime = line.replace(/End [tT]ime:/, '').trim();
+      } else if (line !== 'until' && !line.startsWith('Provide') && !line.startsWith('Current Task')) {
+        if (description) description += ' ';
+        description += line;
+      }
+    }
+
+    if (category && startTime && endTime) {
+      entries.push({
+        category,
+        subcategory,
+        description: description || null,
+        startTime,
+        endTime
+      });
+    }
+  }
+
+  return entries;
+}
+
+// Parse date string from Apple Shortcut format
+function parseDateTime(dateStr) {
+  const match = dateStr.match(/(\d+)\s+(\w+)\s+(\d+)\s+at\s+(\d+):(\d+):(\d+)/);
+
+  if (!match) {
+    throw new Error(`Could not parse date: ${dateStr}`);
+  }
+
+  const [_, day, month, year, hour, minute, second] = match;
+
+  const monthMap = {
+    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+  };
+
+  const monthNum = monthMap[month];
+  const dayPad = day.padStart(2, '0');
+
+  return `${year}-${monthNum}-${dayPad} ${hour}:${minute}:${second}`;
+}
+
+// Calculate duration in minutes
+function calculateDuration(start, end) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const diffMs = endDate - startDate;
+  return Math.round(diffMs / 1000 / 60);
+}
+
+// Format minutes to "Xh Ym" display
+function formatDuration(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hours === 0) return `${mins}m`;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+}
+
+// Parse duration string to minutes
+function parseDuration(durationStr) {
+  // Supports: "2h 30m", "2h30m", "2.5h", "150m", "2:30"
+  durationStr = durationStr.toLowerCase().trim();
+
+  // Format: 2h 30m or 2h30m
+  let match = durationStr.match(/(\d+)h\s*(\d+)m/);
+  if (match) {
+    return parseInt(match[1]) * 60 + parseInt(match[2]);
+  }
+
+  // Format: 2.5h
+  match = durationStr.match(/(\d+\.?\d*)h/);
+  if (match) {
+    return Math.round(parseFloat(match[1]) * 60);
+  }
+
+  // Format: 150m
+  match = durationStr.match(/(\d+)m/);
+  if (match) {
+    return parseInt(match[1]);
+  }
+
+  // Format: 2:30
+  match = durationStr.match(/(\d+):(\d+)/);
+  if (match) {
+    return parseInt(match[1]) * 60 + parseInt(match[2]);
+  }
+
+  throw new Error(`Could not parse duration: ${durationStr}`);
+}
+
+// Import entries into database
+function importEntries(db, entries) {
+  const insert = db.prepare(`
+    INSERT INTO time_entries (category, subcategory, description, start_time, end_time, duration_minutes, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertMany = db.transaction((entries) => {
+    for (const entry of entries) {
+      const startISO = parseDateTime(entry.startTime);
+      const endISO = parseDateTime(entry.endTime);
+      const duration = calculateDuration(startISO, endISO);
+      const date = startISO.split(' ')[0];
+
+      insert.run(
+        entry.category,
+        entry.subcategory,
+        entry.description,
+        startISO,
+        endISO,
+        duration,
+        date
+      );
+    }
+  });
+
+  insertMany(entries);
+  return entries.length;
+}
+
+// Command: import
+function cmdImport(filename) {
+  // If no filename, read from stdin
+  if (!filename) {
+    console.log('📥 Paste your Apple Shortcut output, then press Ctrl+D:\n');
+
+    let content = '';
+    process.stdin.setEncoding('utf8');
+
+    process.stdin.on('data', (chunk) => {
+      content += chunk;
+    });
+
+    process.stdin.on('end', () => {
+      const entries = parseShortcutData(content);
+
+      if (entries.length === 0) {
+        console.log('No entries found in pasted data.');
+        return;
+      }
+
+      const db = initDatabase();
+      const count = importEntries(db, entries);
+      db.close();
+
+      console.log(`✓ Imported ${count} entries`);
+
+      // Also append to markdown files
+      for (const entry of entries) {
+        try {
+          const startISO = parseDateTime(entry.startTime);
+          const endISO = parseDateTime(entry.endTime);
+          const startDate = new Date(startISO.replace(' ', 'T'));
+          const endDate = new Date(endISO.replace(' ', 'T'));
+          appendToMarkdown(entry.category, entry.subcategory, startDate, endDate, entry.description || '');
+        } catch (err) {
+          console.log(`${c('⚠️  Could not write entry to markdown:', colors.orange)} ${entry.category} - ${err.message}`);
+        }
+      }
+
+      // Show summary
+      const categories = {};
+      for (const entry of entries) {
+        if (!categories[entry.category]) {
+          categories[entry.category] = 0;
+        }
+        const start = parseDateTime(entry.startTime);
+        const end = parseDateTime(entry.endTime);
+        const duration = calculateDuration(start, end);
+        categories[entry.category] += duration;
+      }
+
+      console.log('\nSummary:');
+      for (const [cat, mins] of Object.entries(categories)) {
+        console.log(`  ${cat}: ${formatDuration(mins)}`);
+      }
+    });
+
+    return;
+  }
+
+  if (!fs.existsSync(filename)) {
+    console.error(`File not found: ${filename}`);
+    process.exit(1);
+  }
+
+  const content = fs.readFileSync(filename, 'utf-8');
+  const entries = parseShortcutData(content);
+
+  if (entries.length === 0) {
+    console.log('No entries found in file.');
+    return;
+  }
+
+  const db = initDatabase();
+  const count = importEntries(db, entries);
+  db.close();
+
+  console.log(`✓ Imported ${count} entries`);
+
+  // Also append to markdown files
+  for (const entry of entries) {
+    try {
+      const startISO = parseDateTime(entry.startTime);
+      const endISO = parseDateTime(entry.endTime);
+      const startDate = new Date(startISO.replace(' ', 'T'));
+      const endDate = new Date(endISO.replace(' ', 'T'));
+      appendToMarkdown(entry.category, entry.subcategory, startDate, endDate, entry.description || '');
+    } catch (err) {
+      console.log(`${c('⚠️  Could not write entry to markdown:', colors.orange)} ${entry.category} - ${err.message}`);
+    }
+  }
+
+  // Show summary
+  const categories = {};
+  for (const entry of entries) {
+    if (!categories[entry.category]) {
+      categories[entry.category] = 0;
+    }
+    const start = parseDateTime(entry.startTime);
+    const end = parseDateTime(entry.endTime);
+    const duration = calculateDuration(start, end);
+    categories[entry.category] += duration;
+  }
+
+  console.log('\nSummary:');
+  for (const [cat, mins] of Object.entries(categories)) {
+    console.log(`  ${cat}: ${formatDuration(mins)}`);
+  }
+}
+
+// Command: add (interactive)
+async function cmdAdd() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  console.log('\n📝 Add Time Entries');
+  console.log('Paste your entries (one per line or multiple lines)');
+  console.log('Format: Category, Duration, Description');
+  console.log('Example: Sermon, 2h 30m, Reading Isaiah');
+  console.log('With subcategory: Sermon > Reading, 2h 30m, Isaiah study');
+  console.log('\nPress Ctrl+D (Mac/Linux) or Ctrl+Z (Windows) when done.\n');
+
+  const lines = [];
+
+  rl.on('line', (line) => {
+    if (line.trim()) {
+      lines.push(line.trim());
+    }
+  });
+
+  rl.on('close', () => {
+    if (lines.length === 0) {
+      console.log('No entries provided.');
+      return;
+    }
+
+    const db = initDatabase();
+    let successCount = 0;
+    let errorCount = 0;
+    const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    for (const line of lines) {
+      try {
+        // Parse: Category [> Subcategory], Duration, Description
+        const parts = line.split(',').map(p => p.trim());
+
+        if (parts.length < 2) {
+          console.error(`✗ Skipped (invalid format): ${line}`);
+          errorCount++;
+          continue;
+        }
+
+        const categoryPart = parts[0];
+        const duration = parseDuration(parts[1]);
+        const description = parts.slice(2).join(', ') || null;
+
+        // Parse category/subcategory
+        let category, subcategory = null;
+        if (categoryPart.includes('>')) {
+          const catParts = categoryPart.split('>').map(p => p.trim());
+          category = catParts[0];
+          subcategory = catParts[1];
+        } else {
+          category = categoryPart;
+        }
+
+        // Calculate approximate start/end times
+        const endTime = now;
+        const startDate = new Date(endTime);
+        startDate.setMinutes(startDate.getMinutes() - duration);
+        const startTime = startDate.toISOString().replace('T', ' ').substring(0, 19);
+
+        db.prepare(`
+          INSERT INTO time_entries (category, subcategory, description, start_time, end_time, duration_minutes, date)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(category, subcategory, description, startTime, endTime, duration, today);
+
+        const subcat = subcategory ? ` > ${subcategory}` : '';
+        console.log(`✓ Added: ${category}${subcat} - ${formatDuration(duration)}`);
+        successCount++;
+      } catch (err) {
+        console.error(`✗ Error parsing: ${line} (${err.message})`);
+        errorCount++;
+      }
+    }
+
+    db.close();
+
+    console.log(`\n✓ Added ${successCount} entries`);
+    if (errorCount > 0) {
+      console.log(`✗ ${errorCount} errors`);
+    }
+  });
+}
+
+// Command: status (weekly progress)
+function cmdStatus() {
+  const db = initDatabase();
+  const weekStart = getWeekStart();
+  const weekEnd = getWeekEnd();
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get this week's entries
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    WHERE date >= ? AND date <= ?
+    ORDER BY category, date, start_time
+  `).all(weekStart, weekEnd);
+
+  // Get this week's goals
+  const goals = db.prepare(`
+    SELECT * FROM weekly_goals
+    WHERE week_start = ?
+  `).all(weekStart);
+
+  // Calculate actuals by category
+  const actuals = {};
+  for (const entry of entries) {
+    if (!actuals[entry.category]) {
+      actuals[entry.category] = 0;
+    }
+    actuals[entry.category] += entry.duration_minutes;
+  }
+
+  // Today's total
+  const todayEntries = entries.filter(e => e.date === today);
+  const todayTotal = todayEntries.reduce((sum, e) => sum + e.duration_minutes, 0);
+
+  const weekStartDate = new Date(weekStart);
+  const weekEndDate = new Date(weekEnd);
+  const weekStartStr = weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const weekEndStr = weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  // Show active timer if running
+  const activeTimer = loadTimer();
+  if (activeTimer) {
+    const duration = getTimerDuration(activeTimer.startTime);
+    const startTime = new Date(activeTimer.startTime);
+    const timeStr = startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    console.log(`\n${c('⏱️  TIMER RUNNING', colors.success)} ${c('━'.repeat(40), colors.green)}`);
+    console.log(`${c(activeTimer.category, colors.category)}${activeTimer.subcategory ? c(' > ' + activeTimer.subcategory, colors.cyan) : ''}`);
+    console.log(`${c('Started:', colors.label)} ${c(timeStr, colors.grey)}  ${c('|', colors.grey)}  ${c('Duration:', colors.label)} ${c(formatDuration(duration), colors.time)}`);
+    console.log(`${c('Stop with:', colors.grey)} ${c('tt e', colors.success)}`);
+    console.log('');
+  }
+
+  console.log(`\n${c('📊 This Week\'s Progress', colors.header)} ${c(`(${weekStartStr} - ${weekEndStr})`, colors.grey)}:\n`);
+
+  // Build goals map
+  const goalsMap = {};
+  for (const goal of goals) {
+    goalsMap[goal.category] = goal.goal_minutes;
+  }
+
+  // Get all categories (from goals or actuals)
+  const allCategories = new Set([...Object.keys(goalsMap), ...Object.keys(actuals)]);
+
+  let hasGoals = false;
+
+  for (const category of Array.from(allCategories).sort()) {
+    const actual = actuals[category] || 0;
+    const goal = goalsMap[category];
+
+    if (goal) {
+      hasGoals = true;
+      const percentage = Math.min(100, Math.round((actual / goal) * 100));
+      const remaining = Math.max(0, goal - actual);
+
+      // Progress bar with colors
+      const bar = colorProgressBar(percentage);
+
+      const actualStr = c(formatDuration(actual).padEnd(10), colors.time);
+      const goalStr = c(formatDuration(goal).padEnd(10), colors.grey);
+      const percentStr = c(`${percentage}%`, colors.number);
+      const remainStr = c(formatDuration(remaining), colors.orange);
+
+      console.log(`  ${c(category.padEnd(20), colors.category)} ${actualStr} / ${goalStr} [${bar}] ${percentStr}  ${c('←', colors.grey)} ${remainStr} ${c('remaining', colors.grey)}`);
+    } else {
+      // No goal set
+      const actualStr = c(formatDuration(actual).padEnd(10), colors.time);
+      console.log(`  ${c(category.padEnd(20), colors.category)} ${actualStr} / ${c('-', colors.grey).padEnd(10)}          ${c('[no goal set]', colors.grey)}`);
+    }
+  }
+
+  if (!hasGoals && allCategories.size === 0) {
+    console.log('  No entries or goals for this week yet.');
+    console.log('\n  💡 Set weekly goals with: tt g');
+  } else if (!hasGoals) {
+    console.log('\n  💡 Set weekly goals with: tt g');
+  }
+
+  const weekTotal = entries.reduce((sum, e) => sum + e.duration_minutes, 0);
+
+  // Calculate total goal
+  let totalGoalMinutes = 0;
+  for (const goal of goals) {
+    totalGoalMinutes += goal.goal_minutes;
+  }
+
+  console.log('\n' + c('─'.repeat(60), colors.grey));
+  console.log(`${c('Total Week:', colors.label).padEnd(30)} ${c(formatDuration(weekTotal), colors.time)}`);
+  const dayName = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+  console.log(`${c(`Today (${dayName}):`, colors.label).padEnd(30)} ${c(formatDuration(todayTotal), colors.time)}`);
+
+  // Show progress toward total weekly goal
+  if (totalGoalMinutes > 0) {
+    const totalPercentage = Math.min(100, Math.round((weekTotal / totalGoalMinutes) * 100));
+    const totalRemaining = Math.max(0, totalGoalMinutes - weekTotal);
+
+    console.log(`\n${c('📈 Weekly Goal Progress:', colors.header)}`);
+    console.log(`   ${c(formatDuration(weekTotal), colors.time)} ${c('/', colors.grey)} ${c(formatDuration(totalGoalMinutes), colors.grey)} ${c('total', colors.grey)} ${c(`(${totalPercentage}%)`, colors.number)}`);
+
+    if (totalRemaining > 0) {
+      console.log(`   ${c('⏱️', colors.cyan)}  ${c(formatDuration(totalRemaining), colors.orange)} ${c('remaining this week', colors.grey)}`);
+
+      // Calculate how much per remaining day (until Sunday)
+      const today = new Date().getDay(); // 0 = Sunday, 6 = Saturday
+      let remainingDays = 0;
+
+      if (today === 0) { // Sunday - last day of week
+        remainingDays = 1; // Just today
+      } else { // Monday-Saturday
+        remainingDays = 7 - today; // Days until Sunday (including Sunday)
+      }
+
+      if (remainingDays > 0) {
+        const perDay = totalRemaining / remainingDays;
+        const dayWord = remainingDays === 1 ? 'day' : 'days';
+        console.log(`   ${c('📅', colors.cyan)} ${c('~' + formatDuration(Math.round(perDay)), colors.green)} ${c('per day', colors.grey)} ${c(`(${remainingDays} ${dayWord} until Sunday)`, colors.grey)}`);
+      }
+    } else {
+      console.log(`   ${c('✅ Goal achieved!', colors.success)} ${c(formatDuration(weekTotal - totalGoalMinutes), colors.green)} ${c('over target', colors.grey)}`);
+    }
+  }
+
+  db.close();
+}
+
+// Command: goal-wizard (interactive weekly goal setting)
+async function cmdGoalWizard() {
+  const db = initDatabase();
+  const weekStart = getWeekStart();
+  const weekEnd = getWeekEnd();
+
+  // Check if goals already exist
+  const existing = db.prepare(`
+    SELECT * FROM weekly_goals WHERE week_start = ?
+  `).all(weekStart);
+
+  const weekStartDate = new Date(weekStart);
+  const weekEndDate = new Date(weekEnd);
+  const weekStartStr = weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const weekEndStr = weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  console.log(`\n🎯 Set Weekly Goals (${weekStartStr} - ${weekEndStr})\n`);
+
+  // Build existing goals map
+  const existingGoalsMap = {};
+  if (existing.length > 0) {
+    console.log('Current goals:');
+    for (const goal of existing) {
+      existingGoalsMap[goal.category] = goal.goal_minutes;
+      console.log(`  ${goal.category}: ${formatDuration(goal.goal_minutes)}`);
+    }
+    console.log('\n💡 Press Enter to keep existing goal, or enter new value to change');
+    console.log('   Enter "0" to remove a goal\n');
+  }
+
+  // Get common categories
+  const categories = db.prepare(`
+    SELECT DISTINCT category FROM time_entries
+    ORDER BY category
+  `).all().map(r => r.category);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const prompt = (question) => new Promise((resolve) => {
+    rl.question(question, resolve);
+  });
+
+  console.log('Common categories:');
+  categories.forEach((cat, i) => console.log(`  ${i + 1}. ${cat}`));
+  console.log();
+
+  const goals = [];
+
+  // Sermon default
+  const sermonExisting = existingGoalsMap['Sermon'];
+  const sermonPrompt = sermonExisting
+    ? `Sermon goal (current: ${formatDuration(sermonExisting)}, Enter to keep, "0" to remove): `
+    : 'Sermon goal (default 12h, or "0" to skip): ';
+
+  const sermonGoal = await prompt(sermonPrompt);
+
+  if (sermonGoal === '0') {
+    // Skip, don't add goal
+  } else if (sermonGoal && sermonGoal.trim() !== '') {
+    try {
+      const minutes = parseDuration(sermonGoal);
+      goals.push({ category: 'Sermon', minutes });
+    } catch (e) {
+      console.log(`  ✗ Invalid format, using default 12h`);
+      goals.push({ category: 'Sermon', minutes: 12 * 60 });
+    }
+  } else if (sermonExisting) {
+    // Keep existing
+    goals.push({ category: 'Sermon', minutes: sermonExisting });
+  } else {
+    // Default 12h
+    goals.push({ category: 'Sermon', minutes: 12 * 60 });
+  }
+
+  // Other categories
+  for (const category of categories.filter(c => c !== 'Sermon')) {
+    const existingGoal = existingGoalsMap[category];
+    const promptText = existingGoal
+      ? `${category} goal (current: ${formatDuration(existingGoal)}, Enter to keep, "0" to remove): `
+      : `${category} goal (or press Enter to skip): `;
+
+    const answer = await prompt(promptText);
+
+    if (answer === '0') {
+      // Skip, don't add goal
+    } else if (answer && answer.trim() !== '') {
+      try {
+        const minutes = parseDuration(answer);
+        goals.push({ category, minutes });
+      } catch (e) {
+        console.log(`  ✗ Invalid format, skipping ${category}`);
+        if (existingGoal) {
+          goals.push({ category, minutes: existingGoal }); // Keep existing on error
+        }
+      }
+    } else if (existingGoal) {
+      // Keep existing
+      goals.push({ category, minutes: existingGoal });
+    }
+  }
+
+  // Allow adding new category goals
+  while (true) {
+    const answer = await prompt('\nAdd another category? (category name or Enter to finish): ');
+    if (!answer) break;
+
+    const goalAnswer = await prompt(`  Goal for ${answer}: `);
+    try {
+      const minutes = parseDuration(goalAnswer);
+      goals.push({ category: answer, minutes });
+    } catch (e) {
+      console.log(`  ✗ Invalid format, skipping`);
+    }
+  }
+
+  rl.close();
+
+  // Clear existing goals for this week
+  db.prepare(`DELETE FROM weekly_goals WHERE week_start = ?`).run(weekStart);
+
+  // Insert new goals
+  const insert = db.prepare(`
+    INSERT INTO weekly_goals (week_start, week_end, category, goal_minutes)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  let totalGoalMinutes = 0;
+  for (const goal of goals) {
+    insert.run(weekStart, weekEnd, goal.category, goal.minutes);
+    totalGoalMinutes += goal.minutes;
+  }
+
+  console.log(`\n${c('✓ Weekly goals set!', colors.success)}\n`);
+  for (const goal of goals) {
+    console.log(`  ${c(goal.category + ':', colors.category)} ${c(formatDuration(goal.minutes), colors.time)}`);
+  }
+
+  console.log('\n' + c('─'.repeat(60), colors.grey));
+  console.log(`${c('📊 Total planned work this week:', colors.header)} ${c(formatDuration(totalGoalMinutes), colors.green)}`);
+
+  // Calculate work days and average per day
+  const hoursPerDay = totalGoalMinutes / 60 / 5; // Assuming 5 work days
+  console.log(`   ${c('Average per day (5 days):', colors.label)} ${c(hoursPerDay.toFixed(1) + 'h', colors.number)}`);
+
+  db.close();
+}
+
+// Command: rename-category
+function cmdRenameCategory(oldName, newName) {
+  if (!oldName || !newName) {
+    console.error('Usage: track rename-category "Old Name" "New Name"');
+    console.error('Example: track rename-category "Operations" "Bestuur"');
+    process.exit(1);
+  }
+
+  const db = initDatabase();
+
+  // Count affected entries
+  const count = db.prepare(`
+    SELECT COUNT(*) as count FROM time_entries WHERE category = ?
+  `).get(oldName);
+
+  if (count.count === 0) {
+    console.log(`No entries found with category "${oldName}"`);
+    db.close();
+    return;
+  }
+
+  console.log(`Found ${count.count} entries with category "${oldName}"`);
+  console.log(`Renaming to "${newName}"...`);
+
+  // Update entries
+  db.prepare(`
+    UPDATE time_entries SET category = ? WHERE category = ?
+  `).run(newName, oldName);
+
+  // Update goals
+  db.prepare(`
+    UPDATE weekly_goals SET category = ? WHERE category = ?
+  `).run(newName, oldName);
+
+  // Log history
+  db.prepare(`
+    INSERT INTO category_history (old_name, new_name) VALUES (?, ?)
+  `).run(oldName, newName);
+
+  console.log(`✓ Renamed ${count.count} entries from "${oldName}" to "${newName}"`);
+
+  db.close();
+}
+
+// Command: today
+function cmdToday() {
+  const db = initDatabase();
+  const today = new Date().toISOString().split('T')[0];
+
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    WHERE date = ?
+    ORDER BY start_time
+  `).all(today);
+
+  db.close();
+
+  if (entries.length === 0) {
+    console.log('No entries for today.');
+    return;
+  }
+
+  console.log(`\nToday (${today}):\n`);
+
+  let totalMinutes = 0;
+  const byCategory = {};
+
+  for (const entry of entries) {
+    const time = entry.start_time.split(' ')[1].substring(0, 5);
+    const subcat = entry.subcategory ? ` > ${entry.subcategory}` : '';
+    const desc = entry.description ? ` - ${entry.description}` : '';
+    console.log(`  ${time} | ${(entry.category + subcat).padEnd(30)} ${formatDuration(entry.duration_minutes).padEnd(10)} ${desc}`);
+
+    totalMinutes += entry.duration_minutes;
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + entry.duration_minutes;
+  }
+
+  console.log('\n' + '─'.repeat(60));
+  console.log(`  Total: ${formatDuration(totalMinutes)}\n`);
+
+  console.log('By Category:');
+  for (const [cat, mins] of Object.entries(byCategory)) {
+    console.log(`  ${cat.padEnd(25)} ${formatDuration(mins)}`);
+  }
+}
+
+// Command: week
+function cmdWeek() {
+  const db = initDatabase();
+
+  const today = new Date();
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    WHERE date >= ? AND date <= ?
+    ORDER BY date, start_time
+  `).all(weekAgo.toISOString().split('T')[0], today.toISOString().split('T')[0]);
+
+  db.close();
+
+  if (entries.length === 0) {
+    console.log('No entries for the past week.');
+    return;
+  }
+
+  console.log('\nPast 7 Days:\n');
+
+  const byDate = {};
+  const byCategory = {};
+  let totalMinutes = 0;
+
+  for (const entry of entries) {
+    if (!byDate[entry.date]) byDate[entry.date] = [];
+    byDate[entry.date].push(entry);
+
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + entry.duration_minutes;
+    totalMinutes += entry.duration_minutes;
+  }
+
+  for (const [date, dateEntries] of Object.entries(byDate)) {
+    const dayTotal = dateEntries.reduce((sum, e) => sum + e.duration_minutes, 0);
+    console.log(`${date} (${formatDuration(dayTotal)}):`);
+
+    for (const entry of dateEntries) {
+      const time = entry.start_time.split(' ')[1].substring(0, 5);
+      const subcat = entry.subcategory ? ` > ${entry.subcategory}` : '';
+      const desc = entry.description ? ` - ${entry.description}` : '';
+      console.log(`  ${time} | ${(entry.category + subcat).padEnd(30)} ${formatDuration(entry.duration_minutes)}${desc}`);
+    }
+    console.log();
+  }
+
+  console.log('─'.repeat(60));
+  console.log(`Total: ${formatDuration(totalMinutes)}\n`);
+
+  console.log('By Category:');
+  for (const [cat, mins] of Object.entries(byCategory).sort((a, b) => b[1] - a[1])) {
+    const pct = ((mins / totalMinutes) * 100).toFixed(1);
+    console.log(`  ${cat.padEnd(25)} ${formatDuration(mins).padEnd(10)} (${pct}%)`);
+  }
+}
+
+// Command: month
+function cmdMonth() {
+  const db = initDatabase();
+
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    WHERE date >= ? AND date <= ?
+    ORDER BY category, date
+  `).all(firstDay.toISOString().split('T')[0], lastDay.toISOString().split('T')[0]);
+
+  db.close();
+
+  if (entries.length === 0) {
+    console.log('No entries for this month.');
+    return;
+  }
+
+  const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+  console.log(`\n${monthName}:\n`);
+
+  const byCategory = {};
+  let totalMinutes = 0;
+
+  for (const entry of entries) {
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + entry.duration_minutes;
+    totalMinutes += entry.duration_minutes;
+  }
+
+  console.log('By Category:');
+  for (const [cat, mins] of Object.entries(byCategory).sort((a, b) => b[1] - a[1])) {
+    const pct = ((mins / totalMinutes) * 100).toFixed(1);
+    console.log(`  ${cat.padEnd(25)} ${formatDuration(mins).padEnd(10)} (${pct}%)`);
+  }
+
+  console.log('\n' + '─'.repeat(60));
+  console.log(`Total: ${formatDuration(totalMinutes)} (${entries.length} entries)`);
+}
+
+// Command: export
+function cmdExport() {
+  const db = initDatabase();
+
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    ORDER BY date, start_time
+  `).all();
+
+  db.close();
+
+  if (entries.length === 0) {
+    console.log('No entries to export.');
+    return;
+  }
+
+  const csvLines = ['Date,Category,Subcategory,Minutes,Time Display,Percentage,Session Details'];
+
+  for (const entry of entries) {
+    const date = new Date(entry.date);
+    const dateFormatted = `${date.getDate()} ${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
+    const startTime = entry.start_time.split(' ')[1];
+    const endTime = entry.end_time.split(' ')[1];
+    const session = `${startTime} – ${endTime} (${formatDuration(entry.duration_minutes)})`;
+    const desc = entry.description ? ` - ${entry.description}` : '';
+    const subcat = entry.subcategory || '';
+
+    csvLines.push(`${dateFormatted},${entry.category},${subcat},${entry.duration_minutes},${formatDuration(entry.duration_minutes)},,${session}${desc}`);
+  }
+
+  const csvContent = csvLines.join('\n');
+  fs.writeFileSync('time-tracking-export.csv', csvContent);
+
+  console.log(`✓ Exported ${entries.length} entries to time-tracking-export.csv`);
+
+  createSummaries(entries);
+}
+
+// Create summary files
+function createSummaries(entries) {
+  const byCategory = {};
+  let totalMinutes = 0;
+
+  for (const entry of entries) {
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + entry.duration_minutes;
+    totalMinutes += entry.duration_minutes;
+  }
+
+  const categoryCsv = ['Category,Minutes,Time Display,Percentage'];
+  for (const [cat, mins] of Object.entries(byCategory).sort((a, b) => b[1] - a[1])) {
+    const pct = ((mins / totalMinutes) * 100).toFixed(1);
+    categoryCsv.push(`${cat},${mins},${formatDuration(mins)},${pct}%`);
+  }
+
+  fs.writeFileSync('summary-by-category.csv', categoryCsv.join('\n'));
+  console.log('✓ Created summary-by-category.csv');
+
+  const byMonth = {};
+  for (const entry of entries) {
+    const date = new Date(entry.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+
+    if (!byMonth[monthKey]) {
+      byMonth[monthKey] = { label: monthLabel, categories: {}, total: 0 };
+    }
+
+    byMonth[monthKey].categories[entry.category] = (byMonth[monthKey].categories[entry.category] || 0) + entry.duration_minutes;
+    byMonth[monthKey].total += entry.duration_minutes;
+  }
+
+  const monthCsv = ['Month,Category,Minutes,Time Display,Percentage'];
+  for (const [key, data] of Object.entries(byMonth).sort()) {
+    for (const [cat, mins] of Object.entries(data.categories).sort((a, b) => b[1] - a[1])) {
+      const pct = ((mins / data.total) * 100).toFixed(1);
+      monthCsv.push(`${data.label},${cat},${mins},${formatDuration(mins)},${pct}%`);
+    }
+  }
+
+  fs.writeFileSync('summary-by-month.csv', monthCsv.join('\n'));
+  console.log('✓ Created summary-by-month.csv');
+}
+
+// Command: list
+function cmdList(limit = 20) {
+  const db = initDatabase();
+
+  const entries = db.prepare(`
+    SELECT * FROM time_entries
+    ORDER BY date DESC, start_time DESC
+    LIMIT ?
+  `).all(limit);
+
+  db.close();
+
+  if (entries.length === 0) {
+    console.log('No entries found.');
+    return;
+  }
+
+  console.log(`\nLast ${entries.length} entries:\n`);
+
+  for (const entry of entries) {
+    const date = entry.date;
+    const time = entry.start_time.split(' ')[1].substring(0, 5);
+    const subcat = entry.subcategory ? ` > ${entry.subcategory}` : '';
+    const desc = entry.description ? ` - ${entry.description}` : '';
+    console.log(`  ${date} ${time} | ${(entry.category + subcat).padEnd(30)} ${formatDuration(entry.duration_minutes)}${desc}`);
+  }
+}
+
+// Command: stats
+function cmdStats() {
+  const db = initDatabase();
+
+  const total = db.prepare('SELECT COUNT(*) as count FROM time_entries').get();
+  const totalMinutes = db.prepare('SELECT SUM(duration_minutes) as total FROM time_entries').get();
+  const firstEntry = db.prepare('SELECT MIN(date) as first FROM time_entries').get();
+  const lastEntry = db.prepare('SELECT MAX(date) as last FROM time_entries').get();
+  const categories = db.prepare('SELECT COUNT(DISTINCT category) as count FROM time_entries').get();
+
+  db.close();
+
+  console.log('\nDatabase Statistics:\n');
+  console.log(`  Total Entries: ${total.count}`);
+  console.log(`  Total Time: ${formatDuration(totalMinutes.total || 0)}`);
+  console.log(`  Categories: ${categories.count}`);
+  console.log(`  Date Range: ${firstEntry.first || 'N/A'} to ${lastEntry.last || 'N/A'}`);
+
+  if (firstEntry.first && lastEntry.last) {
+    const first = new Date(firstEntry.first);
+    const last = new Date(lastEntry.last);
+    const days = Math.ceil((last - first) / (1000 * 60 * 60 * 24)) + 1;
+    console.log(`  Days Tracked: ${days}`);
+
+    if (days > 0) {
+      const avgPerDay = (totalMinutes.total || 0) / days;
+      console.log(`  Average/Day: ${formatDuration(Math.round(avgPerDay))}`);
+    }
+  }
+}
+
+// Command: start timer
+async function cmdStartTimer() {
+  // Check if timer already running
+  const existingTimer = loadTimer();
+  if (existingTimer) {
+    console.log(`${c('⏱️  Timer already running!', colors.orange)}`);
+    const duration = getTimerDuration(existingTimer.startTime);
+    console.log(`${c(existingTimer.category, colors.category)}${existingTimer.subcategory ? c(' > ' + existingTimer.subcategory, colors.cyan) : ''}`);
+    console.log(`Started: ${c(new Date(existingTimer.startTime).toLocaleTimeString(), colors.grey)}`);
+    console.log(`Duration: ${c(formatDuration(duration), colors.time)}`);
+    console.log(`\n${c('Stop with:', colors.label)} ${c('tt e', colors.green)}`);
+    return;
+  }
+
+  // Get all categories from database
+  const db = initDatabase();
+  const categories = db.prepare(`
+    SELECT DISTINCT category FROM time_entries ORDER BY category
+  `).all().map(r => r.category);
+
+  // Get subcategories used recently
+  const recentSubcats = db.prepare(`
+    SELECT DISTINCT category, subcategory FROM time_entries
+    WHERE subcategory IS NOT NULL
+    ORDER BY created_at DESC LIMIT 50
+  `).all();
+
+  db.close();
+
+  // Build subcategory map
+  const subcatMap = {};
+  for (const row of recentSubcats) {
+    if (!subcatMap[row.category]) {
+      subcatMap[row.category] = [];
+    }
+    if (!subcatMap[row.category].includes(row.subcategory)) {
+      subcatMap[row.category].push(row.subcategory);
+    }
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const prompt = (question) => new Promise((resolve) => {
+    rl.question(question, resolve);
+  });
+
+  console.log(`\n${c('⏱️  Start Timer', colors.header)}\n`);
+  console.log(`${c('Categories:', colors.label)}`);
+  categories.forEach((cat, i) => {
+    console.log(`  ${c(`${i + 1}.`, colors.number)} ${c(cat, colors.category)}`);
+  });
+  console.log();
+
+  const catAnswer = await prompt(c('Select category (number or name): ', colors.label));
+
+  let category;
+  const catNum = parseInt(catAnswer);
+  if (catNum && catNum >= 1 && catNum <= categories.length) {
+    category = categories[catNum - 1];
+  } else {
+    category = catAnswer.trim();
+  }
+
+  if (!category) {
+    console.log(c('✗ No category selected', colors.orange));
+    rl.close();
+    return;
+  }
+
+  // Ask for subcategory
+  let subcategory = null;
+  const subcats = subcatMap[category] || [];
+
+  if (subcats.length > 0) {
+    console.log(`\n${c('Recent subcategories for', colors.label)} ${c(category, colors.category)}${c(':', colors.label)}`);
+    subcats.forEach((sub, i) => {
+      console.log(`  ${c(`${i + 1}.`, colors.number)} ${c(sub, colors.cyan)}`);
+    });
+    console.log(`  ${c('0.', colors.number)} ${c('None / Enter custom', colors.grey)}`);
+    console.log();
+  }
+
+  const subcatAnswer = await prompt(c('Subcategory (number, name, or Enter to skip): ', colors.label));
+
+  if (subcatAnswer.trim()) {
+    const subcatNum = parseInt(subcatAnswer);
+    if (subcatNum && subcatNum >= 1 && subcatNum <= subcats.length) {
+      subcategory = subcats[subcatNum - 1];
+    } else if (subcatAnswer.trim() !== '0') {
+      subcategory = subcatAnswer.trim();
+    }
+  }
+
+  rl.close();
+
+  // Save timer
+  const timerData = {
+    category,
+    subcategory,
+    startTime: new Date().toISOString()
+  };
+
+  saveTimer(timerData);
+
+  console.log(`\n${c('✓ Timer started!', colors.success)}`);
+  console.log(`${c(category, colors.category)}${subcategory ? c(' > ' + subcategory, colors.cyan) : ''}`);
+  console.log(`${c('Started:', colors.label)} ${c(new Date().toLocaleTimeString(), colors.time)}`);
+  console.log(`\n${c('Stop timer with:', colors.label)} ${c('tt e', colors.green)}`);
+}
+
+// Command: end timer
+async function cmdEndTimer() {
+  const timer = loadTimer();
+
+  if (!timer) {
+    console.log(c('✗ No active timer', colors.orange));
+    console.log(c('Start a timer with: tt s', colors.grey));
+    return;
+  }
+
+  const duration = getTimerDuration(timer.startTime);
+  const startDate = new Date(timer.startTime);
+  const endDate = new Date();
+
+  console.log(`\n${c('⏱️  Stopping Timer', colors.header)}\n`);
+  console.log(`${c(timer.category, colors.category)}${timer.subcategory ? c(' > ' + timer.subcategory, colors.cyan) : ''}`);
+  console.log(`${c('Duration:', colors.label)} ${c(formatDuration(duration), colors.time)}`);
+  console.log(`${c('Started:', colors.label)} ${c(startDate.toLocaleTimeString(), colors.grey)}`);
+  console.log(`${c('Ended:', colors.label)} ${c(endDate.toLocaleTimeString(), colors.grey)}`);
+
+  // Ask for description
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const prompt = (question) => new Promise((resolve) => {
+    rl.question(question, resolve);
+  });
+
+  const description = await prompt(`\n${c('Description (optional, Enter to skip):', colors.label)} `);
+
+  rl.close();
+
+  // Save to database
+  const db = initDatabase();
+
+  const startISO = timer.startTime.replace('T', ' ').substring(0, 19);
+  const endISO = endDate.toISOString().replace('T', ' ').substring(0, 19);
+  const date = startISO.split(' ')[0];
+
+  db.prepare(`
+    INSERT INTO time_entries (category, subcategory, description, start_time, end_time, duration_minutes, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    timer.category,
+    timer.subcategory || null,
+    description.trim() || null,
+    startISO,
+    endISO,
+    duration,
+    date
+  );
+
+  db.close();
+
+  // Also append to markdown file
+  try {
+    appendToMarkdown(timer.category, timer.subcategory, startDate, endDate, description.trim() || '');
+  } catch (err) {
+    console.log(`${c('⚠️  Could not write to markdown file:', colors.orange)} ${err.message}`);
+  }
+
+  // Clear timer
+  clearTimer();
+
+  console.log(`\n${c('✓ Timer stopped and entry saved!', colors.success)}`);
+}
+
+// Help command
+function showHelp() {
+  console.log(`
+Time Tracker v3.0 (tt)
+
+USAGE:
+  tt [command] [options]
+
+QUICK COMMANDS:
+  tt              Show weekly progress (default)
+  tt s            Start timer (select category)
+  tt e            End timer (save entry)
+  tt g            Set weekly goals
+  tt i            Import Apple Shortcut (paste directly!)
+  tt i <file>     Import from file
+  tt a            Add manual entries (CSV format)
+  tt t            Today's entries
+  tt w            This week's summary
+  tt m            This month's summary
+  tt l [n]        List last n entries (default: 20)
+  tt st           Database statistics
+  tt x            Export to CSV
+
+FULL COMMANDS:
+  status                         Show this week's progress toward goals
+  start, s                       Start timer (select category/subcategory)
+  end, stop, e                   End timer and save entry
+  goals, goal-wizard, g          Set weekly time goals (interactive)
+  add, a                         Add time entries interactively
+  import, i <file>               Import from Apple Shortcut
+  today, t                       Show today's entries
+  week, w                        Show last 7 days
+  month, m                       Show current month
+  list, l, ls [n]                List recent entries
+  stats, st                      Database statistics
+  export, x                      Export to CSV
+  rename, rn "Old" "New"         Rename category (all entries)
+  help, h                        Show this help
+
+TIMER WORKFLOW (Real-time tracking):
+  tt s            # Start timer, select category
+  # ... do your work ...
+  tt e            # End timer, add description (optional)
+  tt              # See updated progress
+
+DAILY WORKFLOW:
+  tt              # Quick check - weekly progress
+  tt i            # Paste Apple Shortcut data (Ctrl+D when done)
+  tt              # Check again
+
+WEEKLY WORKFLOW:
+  Monday:         tt g            # Set goals
+  Daily:          tt              # Check progress
+  Friday:         tt w            # Review week
+                  tt x            # Export to Sheets
+
+TWO WAYS TO IMPORT:
+  1. Paste directly:
+     tt i                         # Paste Apple Shortcut, Ctrl+D
+
+  2. From file:
+     tt i shortcut.txt            # Import saved file
+
+ADD MANUAL ENTRIES (CSV format):
+  tt a
+  # Then paste: Sermon, 2h30m, Reading
+  # Format: Category, Duration, Description
+
+EXAMPLES:
+  tt                              # Show weekly progress
+  tt g                            # Set goals for this week
+  tt i                            # Paste Apple Shortcut data
+  tt a                            # Add CSV: Sermon, 2h30m, Reading
+  tt rn "Operations" "Bestuur"    # Rename category
+  tt l 50                         # List last 50 entries
+
+TIP: Just type 'tt' to see your weekly progress anytime!
+  `);
+}
+
+// Main
+const args = process.argv.slice(2);
+const command = args[0];
+
+switch (command) {
+  // Status (default)
+  case 'status':
+    cmdStatus();
+    break;
+
+  // Goal wizard - also: g, goals
+  case 'goal-wizard':
+  case 'goals':
+  case 'g':
+    cmdGoalWizard();
+    break;
+
+  // Add entries - also: a
+  case 'add':
+  case 'a':
+    cmdAdd();
+    break;
+
+  // Import - also: i
+  case 'import':
+  case 'i':
+    cmdImport(args[1]);
+    break;
+
+  // Today - also: t
+  case 'today':
+  case 't':
+    cmdToday();
+    break;
+
+  // Week - also: w
+  case 'week':
+  case 'w':
+    cmdWeek();
+    break;
+
+  // Month - also: m
+  case 'month':
+  case 'm':
+    cmdMonth();
+    break;
+
+  // List - also: l, ls
+  case 'list':
+  case 'l':
+  case 'ls':
+    cmdList(parseInt(args[1]) || 20);
+    break;
+
+  // Stats - also: st
+  case 'stats':
+  case 'st':
+    cmdStats();
+    break;
+
+  // Export - also: x
+  case 'export':
+  case 'x':
+    cmdExport();
+    break;
+
+  // Start timer - also: s
+  case 'start':
+  case 's':
+    cmdStartTimer();
+    break;
+
+  // End timer - also: e, stop
+  case 'end':
+  case 'stop':
+  case 'e':
+    cmdEndTimer();
+    break;
+
+  // Rename category - also: rename, rn
+  case 'rename-category':
+  case 'rename':
+  case 'rn':
+    cmdRenameCategory(args[1], args[2]);
+    break;
+
+  // Help
+  case 'help':
+  case '--help':
+  case '-h':
+  case 'h':
+    showHelp();
+    break;
+
+  // Default: no command = show status
+  default:
+    if (!command) {
+      cmdStatus();
+    } else {
+      console.error(`Unknown command: ${command}`);
+      console.error('Run "tt help" for usage information.');
+      process.exit(1);
+    }
+}

@@ -1,0 +1,13 @@
+#!/bin/bash
+#
+# push-now - Push current branch to remote
+#
+# Usage: ./push-now
+
+set -e
+
+BRANCH=$(git branch --show-current)
+
+echo "Pushing branch: $BRANCH"
+git push -u origin "$BRANCH"
+echo "✓ Pushed successfully"

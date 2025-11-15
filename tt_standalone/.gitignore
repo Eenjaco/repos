@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Database (optional - you may want to track this or not)
+# timetracking.db
+
+# Active timer state
+.active-timer.json
+
+# Backups
+backups/*.db
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+credentials.json
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/

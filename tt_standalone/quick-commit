@@ -1,0 +1,34 @@
+#!/bin/bash
+#
+# quick-commit - Add all changes, commit, and push in one command
+#
+# Usage:
+#   ./quick-commit "Your commit message"
+#   ./quick-commit    (will prompt for message)
+
+set -e
+
+BRANCH=$(git branch --show-current)
+
+# Get commit message
+if [ -z "$1" ]; then
+    read -p "Commit message: " MESSAGE
+else
+    MESSAGE="$1"
+fi
+
+if [ -z "$MESSAGE" ]; then
+    echo "Error: Commit message cannot be empty"
+    exit 1
+fi
+
+echo "Adding all changes..."
+git add .
+
+echo "Committing: $MESSAGE"
+git commit -m "$MESSAGE"
+
+echo "Pushing to branch: $BRANCH"
+git push -u origin "$BRANCH"
+
+echo "✓ Done!"
